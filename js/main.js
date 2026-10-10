@@ -5,6 +5,7 @@ import { CRAFTS, ACHIEVEMENTS } from './data.js';
 import { buildWorld, makeHeightField, silhouette } from './world.js';
 import { buildAircraft } from './models.js';
 import { Flyer } from './flight.js';
+import { Cockpit, EYE, LOOK_DOWN } from './cockpit.js';
 import { Sound } from './audio.js';
 import * as SV from './save.js';
 import { clamp, damp, wrapAngle, hexToCss } from './util.js';
@@ -78,8 +79,12 @@ function placeCraft() {
   G.flyer = new Flyer(G.craft, G.model);
   const ground = !!G.craft.ground;
   G.world.setMoteMode(ground);
-  const sp = ground ? G.world.landSpawn() : G.course.spawn;
-  G.flyer.place(G.world, sp.x, sp.z, sp.dir[0], sp.dir[1]);
+  // スタート地点:車は陸、水上機は水、ほかは滑走路(設定で「空から」も選べる)
+  const rw = G.world.runway;
+  const fromRunway = rw && !G.craft.seaplane && !ground && S.settings.start !== 'air';
+  let sp = ground ? G.world.landSpawn() : G.course.spawn;
+  if (fromRunway) sp = G.craft.balloon ? rw.beside() : rw.start();
+  G.flyer.place(G.world, sp.x, sp.z, sp.dir[0], sp.dir[1], fromRunway);
   apReset();
   cam.snap = true;
   cam.cine = null;
@@ -143,6 +148,12 @@ function autopilot() {
       inp.pitch = f.speed > c.takeoff ? 1 : 0;
       inp.roll = clamp(-diff, -1, 1);
     }
+    if (f.onGround) {
+      // 滑走路の上はまっすぐ加速して離陸
+      inp.boost = !c.glider || f.speed < 3;
+      inp.pitch = f.speed > c.vr ? 1 : 0;
+      inp.roll = 0;
+    } else if (f.agl < 60 && f.pos.y < target.y) inp.pitch = Math.max(inp.pitch, 0.5);
   }
   return inp;
 }
@@ -228,7 +239,7 @@ addEventListener('keydown', (e) => {
     return;
   }
   if (G.mode !== 'play') return;
-  const map = { KeyZ: 'photo', KeyX: 'map', KeyC: 'view', KeyV: 'auto', Escape: 'pause', KeyP: 'pause', KeyM: 'music', Space: 'dialog', KeyH: 'help', KeyB: 'horn' };
+  const map = { KeyZ: 'photo', KeyX: 'map', KeyC: 'view', KeyV: 'auto', Escape: 'pause', KeyP: 'pause', KeyM: 'music', Space: 'dialog', KeyH: 'help', KeyB: 'horn', KeyR: 'reset' };
   if (map[e.code]) act(map[e.code]);
 });
 addEventListener('keyup', (e) => keys.delete(e.code));
@@ -241,9 +252,11 @@ function act(a) {
   else if (a === 'map') { G.mapOn = !G.mapOn; $('mapWrap').classList.toggle('hidden', !G.mapOn); }
   else if (a === 'view') {
     G.camMode = (G.camMode + 1) % 3;
+    S.settings.cam = G.camMode;
+    SV.save();
     cam.snap = true;
     cam.cine = null;
-    $('viewLbl').textContent = ['うしろ', '遠く', '操縦席'][G.camMode];
+    $('viewLbl').textContent = ['うしろ', '遠く', '一人称'][G.camMode];
     $('viewBadge').textContent = G.camMode + 1;
   } else if (a === 'auto') {
     G.auto = !G.auto;
@@ -254,6 +267,12 @@ function act(a) {
   else if (a === 'dialog') closeDialog();
   else if (a === 'help') { pause(); openOverlay('help'); }
   else if (a === 'horn') { if (G.craft.ground) sound.horn(G.craft.id); }
+  else if (a === 'reset') {
+    placeCraft();
+    G.auto = false;
+    syncAutoUI();
+    toast('スタート地点にもどりました');
+  }
 }
 function syncAutoUI() {
   $('autoTag').classList.toggle('hidden', !G.auto);
@@ -298,7 +317,7 @@ $('pauseBtn').addEventListener('click', () => act('pause'));
 }
 
 // ドラッグで見まわす
-const cam = { vel: new THREE.Vector3(), prev: new THREE.Vector3(), pos: new THREE.Vector3(), look: new THREE.Vector3(), yaw: 0, pitch: 0, drag: null, lastDrag: -99, snap: true, cine: null, fov: 60 };
+const cam = { zoom: 1, vel: new THREE.Vector3(), prev: new THREE.Vector3(), pos: new THREE.Vector3(), look: new THREE.Vector3(), yaw: 0, pitch: 0, drag: null, lastDrag: -99, snap: true, cine: null, fov: 60 };
 renderer.domElement.addEventListener('pointerdown', (e) => {
   firstGesture();
   cam.drag = { x: e.clientX, y: e.clientY, id: e.pointerId };
@@ -313,11 +332,39 @@ renderer.domElement.addEventListener('pointermove', (e) => {
   cam.lastDrag = G.t;
 });
 const endDrag = () => { cam.drag = null; cam.lastDrag = G.t; };
+// ホイールで近づく・はなれる
+renderer.domElement.addEventListener('wheel', (e) => {
+  e.preventDefault();
+  cam.zoom = clamp(cam.zoom * (e.deltaY > 0 ? 1.1 : 0.9), 0.5, 2.5);
+}, { passive: false });
+// 2本指でピンチして近づく・はなれる(スマホ)
+{
+  const pts = new Map();
+  let pd = 0;
+  renderer.domElement.addEventListener('pointerdown', (e) => pts.set(e.pointerId, [e.clientX, e.clientY]));
+  renderer.domElement.addEventListener('pointermove', (e) => {
+    if (!pts.has(e.pointerId)) return;
+    pts.set(e.pointerId, [e.clientX, e.clientY]);
+    if (pts.size === 2) {
+      const [a, b] = [...pts.values()];
+      const d = Math.hypot(a[0] - b[0], a[1] - b[1]);
+      if (pd) cam.zoom = clamp(cam.zoom * (pd / d), 0.5, 2.5);
+      pd = d;
+    }
+  });
+  const up = (e) => { pts.delete(e.pointerId); pd = 0; };
+  renderer.domElement.addEventListener('pointerup', up);
+  renderer.domElement.addEventListener('pointercancel', up);
+}
 renderer.domElement.addEventListener('pointerup', endDrag);
 renderer.domElement.addEventListener('pointercancel', endDrag);
 
 // ---------------------------------------------------------------- カメラ
-const COCKPIT = { plane: [0, 0.75, 1.2], biplane: [0, 1.25, -0.5], glider: [0, 0.6, 1.8], seaplane: [0, 0.95, 1.1], jet: [0, 0.7, 7.4], balloon: [0, 2.4, 0], car: [0.3, 1.25, 0.1], scooter: [0, 1.85, 0] };
+const cockpit = new Cockpit();
+window.__cockpit = cockpit; // 動作確認用
+const head = new THREE.Vector3();
+let headLag = 0;
+const lookQ = new THREE.Quaternion(), fpQ = new THREE.Quaternion(), _eL = new THREE.Euler();
 const _v = new THREE.Vector3(), _f = new THREE.Vector3(), _d = new THREE.Vector3(), _l = new THREE.Vector3();
 function updateCamera(dt) {
   const f = G.flyer, c = f.c, w = G.world;
@@ -329,6 +376,7 @@ function updateCamera(dt) {
   }
   const mode = G.mode === 'menu' ? 'menu' : ['chase', 'cine', 'cockpit'][G.camMode];
   G.model.root.visible = mode !== 'cockpit';
+  document.body.classList.toggle('fp', mode === 'cockpit');
   let rate = 3.5;
   if (mode === 'menu') {
     const a = G.t * 0.07 + cam.yaw;
@@ -339,8 +387,8 @@ function updateCamera(dt) {
   } else if (mode === 'chase') {
     const yaw = f.yaw + cam.yaw;
     const p = (c.balloon ? 0.32 : 0.16) + cam.pitch;
-    _d.set(-Math.sin(yaw) * Math.cos(p), Math.sin(p), -Math.cos(yaw) * Math.cos(p)).multiplyScalar(dist).add(f.pos);
-    _d.y += h * 0.35;
+    _d.set(-Math.sin(yaw) * Math.cos(p), Math.sin(p), -Math.cos(yaw) * Math.cos(p)).multiplyScalar(dist * cam.zoom).add(f.pos);
+    _d.y += h * 0.35 * cam.zoom;
     if (c.balloon) {
       _d.y += 8;
       _l.copy(f.pos).y += 11;
@@ -360,12 +408,19 @@ function updateCamera(dt) {
     _l.copy(f.pos);
     if (c.balloon) _l.y += 10;
   } else {
-    const o = COCKPIT[c.id];
-    _d.set(o[0], o[1], o[2]).applyQuaternion(G.model.root.quaternion).add(f.pos);
-    _v.set(Math.sin(cam.yaw) * Math.cos(cam.pitch * 0.6), -cam.pitch * 0.6 + (c.balloon ? -0.15 : 0), Math.cos(cam.yaw) * Math.cos(cam.pitch * 0.6))
-      .applyQuaternion(G.model.root.quaternion);
-    _l.copy(_d).addScaledVector(_v, 50);
-    rate = 60;
+    // 一人称:目の位置にカメラを置き、のりものといっしょに動く
+    const o = EYE[c.id];
+    const vq = G.model.root.quaternion;
+    // 体のゆれ:エンジンの振動と、地面のでこぼこ
+    const vib = (f.onGround || c.ground ? 0.006 + Math.min(Math.abs(f.speed), 30) * 0.0006 : 0.0015) + f.throttle * 0.002;
+    head.set((Math.random() - 0.5) * vib, (Math.random() - 0.5) * vib, 0);
+    // 旋回すると頭が少し外へ(G のかんじ)
+    headLag += ((c.ground ? -f.roll * 0.6 : Math.sin(f.roll) * 0.05) - headLag) * damp(3, dt);
+    head.x += headLag * 0.15;
+    _d.set(o[0], o[1], o[2]).add(head).applyQuaternion(vq).add(f.pos);
+    lookQ.setFromEuler(_eL.set(-cam.pitch * 0.9 - LOOK_DOWN[c.id], Math.PI + cam.yaw * 1.3, 0, 'YXZ'));
+    fpQ.copy(vq).multiply(lookQ);
+    rate = 1000;
   }
   if (cam.snap) {
     cam.pos.copy(_d);
@@ -376,7 +431,11 @@ function updateCamera(dt) {
     cam.look.lerp(_l, damp(mode === 'cockpit' ? 60 : 9, dt));
   }
   const s = w.surfaceAt(cam.pos.x, cam.pos.z);
-  if (mode !== 'cockpit') cam.pos.y = Math.max(cam.pos.y, s.y + 3);
+  if (mode !== 'cockpit') {
+    cam.pos.y = Math.max(cam.pos.y, s.y + (c.ground || f.onGround ? 1.2 : 3));
+    // 建物の中にカメラが入らないように
+    w.collide(cam.pos, 1.5, false);
+  }
   if (dt > 0) cam.vel.subVectors(cam.pos, cam.prev).divideScalar(dt);
   cam.prev.copy(cam.pos);
   camera.position.copy(cam.pos);
@@ -386,19 +445,90 @@ function updateCamera(dt) {
     G.shake = Math.max(0, G.shake - dt * 3);
   }
   camera.up.set(0, 1, 0);
-  camera.lookAt(cam.look);
+  if (mode === 'cockpit') camera.quaternion.copy(fpQ);
+  else camera.lookAt(cam.look);
   if (mode === 'chase' && !c.balloon && !c.ground) camera.rotateZ(-f.roll * 0.22);
-  if (mode === 'cockpit' && !c.balloon && !c.ground) camera.rotateZ(-f.roll * 0.9);
-  if (mode === 'cockpit' && c.id === 'scooter') camera.rotateZ(-f.roll * 0.7);
-  const over = c.balloon ? 0 : clamp((f.speed - c.cruise) / Math.max(c.boost - c.cruise, 1), 0, 1);
-  cam.fov += (60 + over * 9 - cam.fov) * damp(2, dt);
+  const over = c.balloon || c.ground ? 0 : clamp((f.speed - c.cruise) / Math.max(c.boost - c.cruise, 1), 0, 1);
+  cam.fov += ((mode === 'cockpit' ? 70 : 60) + over * 9 - cam.fov) * damp(2, dt);
   if (Math.abs(camera.fov - cam.fov) > 0.01) {
     camera.fov = cam.fov;
     camera.updateProjectionMatrix();
   }
 }
 
+// ---------------------------------------------------------------- けむり・しぶき・土ぼこり
+const puffs = [];
+{
+  const c = document.createElement('canvas');
+  c.width = c.height = 64;
+  const g = c.getContext('2d');
+  const gr = g.createRadialGradient(32, 32, 2, 32, 32, 32);
+  gr.addColorStop(0, 'rgba(255,255,255,0.9)');
+  gr.addColorStop(1, 'rgba(255,255,255,0)');
+  g.fillStyle = gr;
+  g.fillRect(0, 0, 64, 64);
+  const tex = new THREE.CanvasTexture(c);
+  for (let i = 0; i < 48; i++) {
+    const sp = new THREE.Sprite(new THREE.SpriteMaterial({ map: tex, transparent: true, depthWrite: false, opacity: 0 }));
+    sp.visible = false;
+    sp.userData = { life: 0, max: 1, v: new THREE.Vector3(), grow: 1 };
+    scene.add(sp);
+    puffs.push(sp);
+  }
+}
+let puffI = 0;
+function puff(pos, color, n = 6, size = 2, spread = 2, life = 1.4, up = 1.5) {
+  for (let i = 0; i < n; i++) {
+    const p = puffs[puffI++ % puffs.length];
+    p.position.set(pos.x + (Math.random() - 0.5) * spread, pos.y + Math.random() * 0.5, pos.z + (Math.random() - 0.5) * spread);
+    p.material.color.set(color);
+    p.userData.life = p.userData.max = life * (0.7 + Math.random() * 0.6);
+    p.userData.v.set((Math.random() - 0.5) * 2, up * (0.5 + Math.random()), (Math.random() - 0.5) * 2);
+    p.userData.grow = size;
+    p.scale.setScalar(size * 0.4);
+    p.visible = true;
+  }
+}
+let dustT = 0;
+function updatePuffs(dt) {
+  for (const p of puffs) {
+    const u = p.userData;
+    if (!p.visible) continue;
+    u.life -= dt;
+    if (u.life <= 0) { p.visible = false; continue; }
+    const k = u.life / u.max;
+    p.position.addScaledVector(u.v, dt);
+    p.scale.setScalar(u.grow * (0.4 + (1 - k) * 1.4));
+    p.material.opacity = 0.55 * k;
+  }
+  // 車・原付・滑走する飛行機の土ぼこり
+  const f = G.flyer;
+  if ((f.c.ground || f.onGround) && Math.abs(f.speed) > 9 && !G.course.night) {
+    dustT -= dt;
+    if (dustT < 0) {
+      dustT = 0.12;
+      _v.set(-Math.sin(f.yaw) * 2, 0.2 - (f.c.gearH || 0), -Math.cos(f.yaw) * 2).add(f.pos);
+      puff(_v, 0xd8ccb0, 1, f.c.ground ? 1.6 : 2.5, 1, 1.0, 0.6);
+    }
+  }
+}
+
 // ---------------------------------------------------------------- 1コマごとの処理
+const fpActive = () => (G.mode === 'play' || G.mode === 'pause') && G.camMode === 2;
+const _sunC = new THREE.Color(), _skyC = new THREE.Color(), _gndC = new THREE.Color();
+function updateCockpit(dt) {
+  const f = G.flyer, c = f.c, sky = G.course.sky;
+  if (cockpit.id !== c.id) cockpit.set(c.id);
+  const head2 = head.clone();
+  cockpit.update(dt, G.model.root.quaternion, lookQ, G.world.sunDir, {
+    sunColor: _sunC.set(sky.sun), sunI: sky.sunI, sky: _skyC.set(sky.hemiSky), ground: _gndC.set(sky.hemiGround), hemiI: sky.hemiI,
+  }, {
+    head: head2, speed: f.speed, alt: f.pos.y, vario: f.vel.y || 0, rpm: sound.rpm || 0, throttle: f.throttle,
+    roll: f.roll, pitch: f.pitch, heading: Math.atan2(Math.sin(f.yaw), -Math.cos(f.yaw)),
+    inRoll: G.inp.roll, inPitch: G.inp.pitch, burner: f.burner, slip: G.inp.yaw * 0.3 - f.roll * 0.05,
+  });
+}
+
 function step(dt) {
   const w = G.world, f = G.flyer;
   const playing = G.mode === 'play';
@@ -407,6 +537,8 @@ function step(dt) {
   const ev = f.update(dt, inp, w, G.t);
   w.update(G.t, dt, camera, f.pos);
   updateCamera(dt);
+  if (fpActive()) updateCockpit(dt);
+  updatePuffs(dt);
 
   const cd = w.cloudDensity(camera.position);
   $('cloudfog').style.opacity = (cd * 0.8).toFixed(3);
@@ -484,20 +616,41 @@ function step(dt) {
 function handleEvent(e) {
   if (e.type === 'bump' && G.t - G.bumpT > 1.5) {
     G.bumpT = G.t;
+    puff(G.flyer.pos, 0xcbbd9a, 8, 4, 6, 1.4, 2);
     sound.bump();
     G.shake = 1.2;
     hint('ふわっ…地面が近いみたい。↑ で機首を上げよう');
   } else if (e.type === 'splash' && G.t - G.bumpT > 1.5) {
     G.bumpT = G.t;
+    puff(G.flyer.pos, 0xffffff, 12, 5, 8, 1.4, 6);
     sound.splash();
     G.shake = 1;
     hint('ざぶん!水しぶきが上がった');
   } else if (e.type === 'splashdown') {
+    puff(G.flyer.pos, 0xffffff, 10, 4, 6, 1.4, 4);
     sound.splash();
     toast('水の上におりました。Shift で加速 → ↑ で離水');
     ach('splash');
   } else if (e.type === 'takeoff') {
     toast('離水しました!');
+  } else if (e.type === 'liftoff') {
+    toast('離陸しました!');
+    ach('takeoff');
+  } else if (e.type === 'touchdown') {
+    const soft = e.sink < 1.6;
+    _v.copy(G.flyer.pos);
+    _v.y -= G.flyer.c.gearH;
+    puff(_v, 0xe8e4dc, 8, 3, 4, 1.6, 1);
+    sound.bump();
+    G.shake = e.sink > 3 ? 0.8 : 0.3;
+    toast(`着陸しました(接地 ${e.sink.toFixed(1)} m/秒${soft ? '・なめらか!' : ''})${e.runway ? '' : '<br><small>滑走路の外でした</small>'}`);
+    ach('landing');
+    if (soft && e.runway) ach('butter');
+    hint('↓ でブレーキ。止まったら ↑ でもう一度離陸できます', 6);
+  } else if (e.type === 'stopped') {
+    toast('止まりました。↑ を押しつづけると、また離陸できます');
+  } else if (e.type === 'winch') {
+    hint('ウインチで引っぱっています。そのまま空へ!', 4);
   } else if (e.type === 'shore' && G.t - G.bumpT > 2) {
     G.bumpT = G.t;
     hint(G.craft.ground ? 'ここから先は水。向きをかえよう(橋があればわたれます)' : '岸についた。向きをかえよう');
@@ -595,6 +748,8 @@ function updateHud(dt) {
   } else if (c.balloon) {
     extra = `<span class="k">熱</span>&nbsp;<b>${'■'.repeat(Math.round(f.heat * 6))}${'□'.repeat(6 - Math.round(f.heat * 6))}</b>`;
   } else if (f.onWater) extra = '<b>水上</b>';
+  else if (f.onGround) extra = '<b>地上</b>';
+  else if (G.flyer.model.gear) extra = `<span class="k">車輪</span>&nbsp;<b>${f.gearT > 0.9 ? '出' : f.gearT < 0.1 ? 'しまう' : '…'}</b>`;
   else if (c.ground) extra = `<span class="k">エンジン</span>&nbsp;<b>${Math.round((sound.rpm || 0) / 100) * 100}</b><span class="u">rpm</span>`;
   $('gExtra').innerHTML = extra;
   const list = S.stamps[G.course.id] || [];
@@ -673,6 +828,23 @@ function drawMap() {
       g.lineTo(b[0], b[1]);
     }
     g.stroke();
+  }
+  // 滑走路
+  if (w.runway) {
+    const st = G.course.strip;
+    const [x1, z1] = w.runway.frame.toWorld(-st.len / 2, 0), [x2, z2] = w.runway.frame.toWorld(st.len / 2, 0);
+    const a = toPx(x1, z1), b = toPx(x2, z2);
+    g.strokeStyle = '#3a3f5c';
+    g.lineWidth = 5;
+    g.beginPath();
+    g.moveTo(a[0], a[1]);
+    g.lineTo(b[0], b[1]);
+    g.stroke();
+    g.strokeStyle = '#f5edd3';
+    g.lineWidth = 1;
+    g.setLineDash([3, 3]);
+    g.stroke();
+    g.setLineDash([]);
   }
   // ひかりの道
   g.strokeStyle = 'rgba(255,240,170,0.9)';
@@ -885,11 +1057,13 @@ function chooseCourse(c) {
   if (c === G.course || courseBusy) return;
   courseBusy = true;
   $('mText').textContent = c.intro + '\n(景色を準備しています…)';
+  $('loading').classList.remove('hidden');
   setTimeout(() => {
     loadCourse(c);
     courseBusy = false;
     refreshMenu();
-  }, 30);
+    $('loading').classList.add('hidden');
+  }, 60);
 }
 
 function showMenu() {
@@ -917,29 +1091,37 @@ function startFlight() {
   $('boostLbl').textContent = G.craft.balloon ? 'バーナー' : G.craft.glider ? '—' : '加速';
   document.querySelectorAll('.groundOnly').forEach((b) => b.classList.toggle('hidden', !G.craft.ground));
   G.mode = 'play';
-  G.camMode = 0;
-  $('viewLbl').textContent = 'うしろ';
-  $('viewBadge').textContent = '1';
+  G.camMode = S.settings.cam || 0;
+  $('viewLbl').textContent = ['うしろ', '遠く', '一人称'][G.camMode];
+  $('viewBadge').textContent = G.camMode + 1;
   G.chain = 0;
   G.drift = 0;
   G.thermalBase = null;
   placeCraft();
   G.found = new Set();
   showDialog(G.course.name, G.course.intro, 8);
+  if (S.settings.start === 'air' && !G.craft.ground && !G.craft.seaplane) {
+    hint(coarse ? 'スティックで操縦、加速ボタンで速く、写真ボタンで撮影' : '← → で曲がる / ↑ ↓ で上下 / Shift で加速 / Z で写真', 9);
+    if (S.flown.length >= CRAFTS.length) ach('allcraft');
+    return;
+  }
   const H = {
-    plane: '← → で曲がる / ↑ ↓ で上下 / Shift で加速 / Z で写真',
-    biplane: '← → で曲がる / ↑ ↓ で上下 / Shift で加速 / Z で写真',
-    jet: '← → で曲がる / ↑ ↓ で上下 / Shift で加速 / Z で写真',
+    plane: '↑ を押しつづけると走りだし、速くなると離陸します(Shift でもっと速く)/ ← → で曲がる',
+    biplane: '↑ を押しつづけると走りだし、速くなると離陸します(Shift でもっと速く)/ ← → で曲がる',
+    jet: '↑ を押しつづけると走りだし、速くなると離陸します(Shift でもっと速く)/ ← → で曲がる',
     seaplane: 'まずは水の上。Shift で加速して、↑ で離水しよう',
-    glider: '白い粒がのぼる所(上昇気流)の中で、くるくる回ると上がれます',
+    glider: 'Shift でウインチ(巻き上げ機)に引っぱってもらって離陸。白い粒がのぼる所で、くるくる回ると上がれます',
     balloon: '↑ か Shift でバーナー、↓ で弁。高さで風の向きがかわります(右下の矢印)',
     car: '↑ アクセル / ↓ ブレーキ・バック / ← → ハンドル / Shift で加速 / B でクラクション',
     scooter: '↑ アクセル / ↓ ブレーキ・バック / ← → ハンドル / Shift で加速 / B でクラクション',
   };
   const HT = {
     seaplane: 'まずは水の上。加速ボタンで速くして、スティックを上へたおすと離水',
-    glider: '白い粒がのぼる所(上昇気流)の中で、くるくる回ると上がれます',
+    glider: '加速ボタンでウインチ発航。白い粒がのぼる所で、くるくる回ると上がれます',
     balloon: 'スティック上(加速ボタン)でバーナー、下で弁。高さで風の向きがかわります',
+    plane: 'スティックを上にたおしつづけると走りだし、速くなると離陸します',
+    biplane: 'スティックを上にたおしつづけると走りだし、速くなると離陸します',
+    jet: 'スティックを上にたおしつづけると走りだし、速くなると離陸します',
     car: 'スティックを上でアクセル、下でブレーキ、左右でハンドル',
     scooter: 'スティックを上でアクセル、下でブレーキ、左右でハンドル',
   };
@@ -951,7 +1133,7 @@ function pause() {
   if (G.mode !== 'play') return;
   G.mode = 'pause';
   $('pSound').textContent = `音楽:${S.settings.music ? 'オン' : 'オフ'}`;
-  $('pInvert').textContent = `上下の操作:${S.settings.invert ? '反転' : 'ふつう'}`;
+  syncSettingsUI();
   $('pause').classList.remove('hidden');
   sound.flight({ active: false });
 }
@@ -960,12 +1142,25 @@ function resume() {
   $('pause').classList.add('hidden');
   G.mode = 'play';
 }
-// 上下反転の切りかえボタン(ひとやすみ画面)
+// 設定ボタン(ひとやすみ画面)
+const QN = ['軽い', 'ふつう', 'きれい'];
+function syncSettingsUI() {
+  $('pSound').textContent = `音楽:${S.settings.music ? 'オン' : 'オフ'}`;
+  $('pSfx').textContent = `効果音・エンジン音:${S.settings.sfx ? 'オン' : 'オフ'}`;
+  $('pInvert').textContent = `上下の操作:${S.settings.invert ? '反転' : 'ふつう'}`;
+  $('pStart').textContent = `スタート:${S.settings.start === 'air' ? '空から' : '滑走路から'}`;
+  $('pQuality').textContent = `画質:${QN[quality]}`;
+}
 {
-  const b = document.createElement('button');
-  b.dataset.p = 'invert';
-  b.id = 'pInvert';
-  $('pause').querySelector('.card').insertBefore(b, $('pause').querySelector('[data-p="menu"]'));
+  const card = $('pause').querySelector('.card');
+  const before = card.querySelector('[data-p="menu"]');
+  for (const [p, id] of [['reset', 'pReset'], ['sfx', 'pSfx'], ['invert', 'pInvert'], ['start', 'pStart'], ['quality', 'pQuality']]) {
+    const b = document.createElement('button');
+    b.dataset.p = p;
+    b.id = id;
+    if (p === 'reset') b.textContent = 'スタート地点にもどる(R)';
+    card.insertBefore(b, before);
+  }
 }
 $('pause').addEventListener('click', (e) => {
   const p = e.target.dataset.p;
@@ -974,7 +1169,16 @@ $('pause').addEventListener('click', (e) => {
   if (p === 'resume') resume();
   else if (p === 'menu') showMenu();
   else if (p === 'sound') { toggleMusic(); $('pSound').textContent = `音楽:${S.settings.music ? 'オン' : 'オフ'}`; }
-  else if (p === 'invert') { S.settings.invert = !S.settings.invert; SV.save(); $('pInvert').textContent = `上下の操作:${S.settings.invert ? '反転' : 'ふつう'}`; }
+  else if (p === 'invert') { S.settings.invert = !S.settings.invert; SV.save(); syncSettingsUI(); }
+  else if (p === 'sfx') { S.settings.sfx = !S.settings.sfx; SV.save(); sound.setSfx(S.settings.sfx); syncSettingsUI(); }
+  else if (p === 'start') { S.settings.start = S.settings.start === 'air' ? 'runway' : 'air'; SV.save(); syncSettingsUI(); }
+  else if (p === 'reset') { resume(); act('reset'); }
+  else if (p === 'quality') {
+    // 画質は、ページを読みこみなおして切りかえる
+    S.settings.quality = (quality + 1) % 3;
+    SV.save();
+    location.reload();
+  }
   else openOverlay(p);
 });
 
@@ -1113,7 +1317,15 @@ function frame(now) {
     step(dt);
     if (G.mode === 'play') updateHud(dt);
   }
-  renderer.render(scene, camera);
+  if (fpActive()) {
+    // 景色を描いてから、奥行きを消して操縦席を重ねる
+    renderer.autoClear = false;
+    renderer.clear();
+    renderer.render(scene, camera);
+    renderer.clearDepth();
+    cockpit.render(renderer, camera.aspect, camera.fov);
+    renderer.autoClear = true;
+  } else renderer.render(scene, camera);
   if (G.photoReq) {
     G.photoReq = false;
     takePhoto();

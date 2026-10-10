@@ -33,6 +33,7 @@ const ISLANDS = [
 ];
 const islands = {
   id: 'islands',
+  strip: { x: -620, z: -260, ang: 0, len: 520 }, // 滑走路(x, z は真ん中、ang は向き)
   name: '夕凪の群島',
   en: 'Sunset Archipelago',
   sub: '夕日にそまる海と、ちいさな島めぐり',
@@ -104,6 +105,7 @@ const XF = -350;
 const rc = (x) => 260 * Math.sin(x * 0.0011 + 0.4) + 110 * Math.sin(x * 0.0029 + 1.3);
 const canyon = {
   id: 'canyon',
+  strip: { x: 200, z: -700, ang: Math.PI / 2, len: 600 }, // 滑走路(x, z は真ん中、ang は向き)
   name: '大瀑布の渓谷',
   en: 'Great Falls Canyon',
   sub: '朝もやの大きな滝と、赤い岩の谷',
@@ -201,6 +203,7 @@ const canyon = {
 const fz = (x) => 380 * Math.sin(x * 0.0008 + 0.2) + 160 * Math.sin(x * 0.0021 + 2);
 const fjord = {
   id: 'fjord',
+  strip: { x: 300, z: -700, ang: Math.PI / 2, len: 560 }, // 滑走路(x, z は真ん中、ang は向き)
   name: '雪嶺の峡湾',
   en: 'Snowpeak Fjord',
   sub: '雪の山にかこまれた、深い入り江',
@@ -274,6 +277,7 @@ const fjord = {
 // ---------------------------------------------------------------------------
 const aurora = {
   id: 'aurora',
+  strip: { x: 900, z: -700, ang: Math.PI / 2, len: 560 }, // 滑走路(x, z は真ん中、ang は向き)
   name: 'オーロラの湖',
   en: 'Aurora Lake',
   sub: '星ふる夜、ゆらめく光のカーテン',
@@ -311,7 +315,7 @@ const aurora = {
     [0, -300, 40], [300, -120, 40], [700, 300, 80], [200, 1300, 380], [-500, 1200, 420], [-700, 400, 120],
     [-350, 260, 40], [-800, -500, 90], [-1150, -950, 60], [-400, -1100, 120],
   ],
-  thermals: [],
+  thermals: [[-1150, -950], [600, 900], [-800, 300], [900, -700]],
   build(ctx) {
     const shore = ctx.findShore(0, 0, 0.75, 6);
     ctx.add(M.cabin({ wall: 0x7a4a36, roof: 0x3a3f5c, lit: true }), shore.x, shore.z, { exclude: 40, rot: -0.7 + Math.PI, smoke: true, solid: 6, top: 10 });
@@ -353,6 +357,7 @@ function flowerAt(x, z, h, ny, N) {
 const hills = {
   isFlower: (x, z, h, ny, N) => flowerAt(x, z, h, ny, N) >= 0,
   id: 'hills',
+  strip: { x: -500, z: -700, ang: Math.PI / 2, len: 560 }, // 滑走路(x, z は真ん中、ang は向き)
   name: '花と風車の丘',
   en: 'Windmill Hills',
   sub: '春の花畑と、のんびりまわる風車',
@@ -432,6 +437,7 @@ const hills = {
 // ---------------------------------------------------------------------------
 const town = {
   id: 'town',
+  strip: { x: 0, z: -1000, ang: Math.PI / 2, len: 560 }, // 滑走路(x, z は真ん中、ang は向き)
   name: '港町と時計台',
   en: 'Harbor Town',
   sub: '碁盤の目の街と、海辺の観覧車',

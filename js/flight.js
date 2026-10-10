@@ -26,13 +26,33 @@ export class Flyer {
     this.vy = 0;
     this.airborne = false;
     this.odo = 0;
+    // 滑走路・地面の上の飛行機
+    this.onGround = false;
+    this.winch = 0;
+    this.gearT = 1; // 1 = 車輪が出ている
+    this.stopped = true;
   }
 
-  place(world, x, z, dirX, dirZ) {
+  place(world, x, z, dirX, dirZ, onGround = false) {
     this.yaw = Math.atan2(dirX, dirZ);
     const s = world.surfaceAt(x, z);
     this.pitch = this.roll = 0;
-    if (this.c.ground) {
+    this.onGround = this.onWater = false;
+    this.winch = 0;
+    if (onGround && this.c.gearH && !s.water) {
+      this.pos.set(x, s.y + this.c.gearH, z);
+      this.onGround = true;
+      this.stopped = true;
+      this.speed = 0;
+      this.pitch = this.c.groundPitch || 0;
+      this.gearT = 1;
+      this.throttle = 0.15;
+    } else if (this.c.balloon && onGround) {
+      this.pos.set(x, s.y, z);
+      this.vy = 0;
+      this.heat = 0.5;
+      this.landed = true;
+    } else if (this.c.ground) {
       this.pos.set(x, s.y, z);
       this.speed = 0;
       this.vy = 0;
@@ -87,6 +107,7 @@ export class Flyer {
   updatePlane(dt, inp, world, ev, t) {
     const c = this.c;
     if (this.onWater) return this.updateOnWater(dt, inp, world, ev);
+    if (this.onGround) return this.updateOnGround(dt, inp, world, ev);
 
     // 傾き(ロール):手をはなすと水平にもどる
     this.roll += (inp.roll * c.maxRoll - this.roll) * damp(c.rollRate, dt);
@@ -135,6 +156,16 @@ export class Flyer {
         this.pos.y = floor;
         this.pitch = 0;
         ev.push({ type: 'splashdown' });
+      } else if (!s.water && c.gearH && (!this.model?.gear || this.gearT > 0.9) && this.vel.y > -5.5 && Math.abs(this.roll) < 0.4 &&
+        this.pitch > -0.22 && this.pitch < 0.5 && world.normalYAt(this.pos.x, this.pos.z) > 0.94) {
+        // 着陸:ゆっくり降りて、機体が水平に近ければ地面につける
+        const sink = -this.vel.y;
+        this.onGround = true;
+        this.stopped = false;
+        this.pos.y = floor;
+        this.roll = 0;
+        ev.push({ type: 'touchdown', sink, runway: !!(world.runway && world.runway.onRunway(this.pos.x, this.pos.z)) });
+        return;
       } else {
         this.pos.y = floor + 0.5;
         this.pitch = Math.max(this.pitch, 0.28);
@@ -147,10 +178,72 @@ export class Flyer {
       this.pitch = Math.max(this.pitch, 0.3);
       ev.push({ type: 'bump' });
     }
-    // 地面が近いと、少し自動で上をむく(やさしさ)
+    // 山や崖が目の前にせまったときだけ、少し自動で上をむく(着陸のじゃまはしない)
     const ahead = world.surfaceAt(this.pos.x + this.vel.x * 1.5, this.pos.z + this.vel.z * 1.5);
-    if (this.pos.y < ahead.y + c.clear + 6 && !(c.seaplane && ahead.water)) {
+    if (this.pos.y < ahead.y + c.clear + 6 && ahead.y - s.y > 4 && !(c.seaplane && ahead.water)) {
       this.pitch += damp(2.5, dt) * (0.35 - this.pitch) * 0.6;
+    }
+    // 車輪:低くゆっくり飛ぶと出る
+    const wantGear = this.agl < 90 && this.speed < c.cruise * 1.2 ? 1 : 0;
+    this.gearT += clamp(wantGear - this.gearT, -dt * 0.6, dt * 0.6);
+  }
+
+  // 滑走路(地面)の上:↑ でエンジンを上げて走り、速くなったら ↑ で離陸。↓ でブレーキ
+  updateOnGround(dt, inp, world, ev) {
+    const c = this.c;
+    const vr = c.vr;
+    let target = Math.min(this.speed, 7), rate = 1.6;
+    let thr = 0.15;
+    if (c.glider) {
+      // グライダーはウインチ(地上の巻き上げ機)で引っぱってもらう
+      if (inp.boost && this.speed < 3 && this.winch <= 0) { this.winch = 6; ev.push({ type: 'winch' }); }
+      if (this.winch > 0) { this.winch -= dt; target = 34; rate = 9; }
+      else target = 0;
+    } else if (inp.boost) { target = c.boost; rate = c.gacc; thr = 1; }
+    else if (inp.pitch > 0.15) { target = c.cruise; rate = c.gacc * 0.75; thr = 0.75; }
+    if (inp.pitch < -0.3) { target = 0; rate = 7; thr = 0.1; }
+    this.throttle += (thr - this.throttle) * damp(2, dt);
+    this.speed += clamp(target - this.speed, -rate * dt, rate * dt);
+    if (this.speed < 0.3 && !this.stopped && target === 0) {
+      this.stopped = true;
+      ev.push({ type: 'stopped' });
+    }
+    if (this.speed > 2) this.stopped = false;
+    // 前輪(後輪)で向きをかえる
+    const k = clamp(this.speed / 6, 0.25, 1) * (1 - clamp(this.speed / (vr * 2.2), 0, 0.6));
+    this.yaw -= (inp.roll * 0.7 * k + inp.yaw * 0.3) * dt;
+    this.roll += (0 - this.roll) * damp(6, dt);
+    const rotate = (inp.pitch > 0.2 || this.winch > 0) && this.speed > vr * 0.8;
+    this.pitch += ((rotate ? 0.14 : c.groundPitch || 0) - this.pitch) * damp(3, dt);
+    const fx = Math.sin(this.yaw), fz = Math.cos(this.yaw);
+    const nx = this.pos.x + fx * this.speed * dt, nz = this.pos.z + fz * this.speed * dt;
+    const s = world.surfaceAt(nx, nz);
+    if (s.water) {
+      if (this.speed > 3) ev.push({ type: 'shore' });
+      this.speed = 0;
+    } else {
+      this.pos.x = nx;
+      this.pos.z = nz;
+      this.pos.y = s.y + c.gearH + (this.speed > 3 ? Math.sin(this.odo * 0.7) * 0.03 : 0);
+      this.odo += this.speed * dt;
+      if (world.normalYAt(nx, nz) < 0.86 && this.speed > 6) {
+        ev.push({ type: 'bump' });
+        this.speed *= 0.97;
+      }
+    }
+    if (world.collide(this.pos, 4)) {
+      if (this.speed > 4) ev.push({ type: 'crash' });
+      this.speed *= 0.3;
+    }
+    this.forward(this.vel).multiplyScalar(this.speed);
+    this.liftNow = 0;
+    // 離陸
+    if (this.speed > vr && (inp.pitch > 0.2 || (c.glider && this.winch > 0))) {
+      this.onGround = false;
+      this.pitch = Math.max(this.pitch, 0.16);
+      this.pos.y += 0.4;
+      if (c.glider) { this.pitch = 0.35; this.winch = 0; }
+      ev.push({ type: 'liftoff' });
     }
   }
 
@@ -335,6 +428,10 @@ export class Flyer {
       }
     } else {
       m.root.rotation.set(-this.pitch, this.yaw, this.roll, 'YXZ');
+      if (m.gear) {
+        m.gear.visible = this.gearT > 0.02;
+        m.gear.scale.y = this.gearT;
+      }
     }
     for (const p of m.props) {
       const rate = this.onWater && this.speed < 1 ? 8 : 25 + this.throttle * 30;

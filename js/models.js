@@ -89,6 +89,7 @@ function buildGlider() {
     part(G.box(1.0, 0.14, 0.5), COL.teal, [-8.3, 0.95, 0.5], [0, 0, -0.06]),
     part(G.box(0.12, 1.7, 0.9), COL.teal, [0, 0.8, -5.0], [-0.3, 0, 0]),
     part(G.box(2.8, 0.1, 0.6), COL.white, [0, 1.6, -5.25]),
+    part(G.cyl(0.22, 0.22, 0.12, 8), COL.dark, [0, -0.38, 0.6], [0, 0, PI / 2]),
   ];
   const g = new THREE.Group();
   g.add(mesh(L));
@@ -137,7 +138,16 @@ function buildJet() {
   }
   const g = new THREE.Group();
   g.add(mesh(L));
-  return { root: g, props: [] };
+  // 車輪(飛ぶとしまわれる)
+  const gear = new THREE.Group();
+  const GL = [];
+  for (const [x, z] of [[1.6, -0.6], [-1.6, -0.6], [0, 5.6]]) {
+    GL.push(part(G.box(0.18, 1.6, 0.18), COL.grey, [x, -1.8, z]));
+    GL.push(part(G.cyl(0.42, 0.42, 0.35, 10), COL.dark, [x, -2.28, z], [0, 0, PI / 2]));
+  }
+  gear.add(mesh(GL));
+  g.add(gear);
+  return { root: g, props: [], gear };
 }
 
 function buildBalloon() {

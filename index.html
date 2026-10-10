@@ -111,7 +111,7 @@
         <svg viewBox="0 0 120 60" class="logo-plane"><path d="M8 34 Q40 26 70 30 L96 22 Q104 21 104 27 L86 36 Q60 44 20 42 Z" fill="#f5edd3" stroke="#3a3f5c" stroke-width="3" stroke-linejoin="round"/><path d="M40 31 L56 12 L64 12 L58 32" fill="#c25b45" stroke="#3a3f5c" stroke-width="3" stroke-linejoin="round"/><path d="M14 40 L6 28 L14 28 L22 36" fill="#c25b45" stroke="#3a3f5c" stroke-width="3" stroke-linejoin="round"/><path d="M104 50 q-12 6 -24 0 t-24 0" fill="none" stroke="#f5edd3" stroke-width="3" stroke-linecap="round" stroke-dasharray="2 7"/></svg>
         <div>
           <h1>ひこうき日和</h1>
-          <p class="sub">のんびり、空の遊覧へ。<span class="ver">ver 2026.10.11</span></p>
+          <p class="sub">のんびり、空の遊覧へ。<span class="ver">ver 2026.10.12</span></p>
         </div>
       </div>
       <nav class="m-nav">
@@ -199,7 +199,9 @@
           <tr><th>Shift</th><td>加速(気球はバーナー)</td></tr>
           <tr><th>Z</th><td>写真をとる(アルバムに入ります)</td></tr>
           <tr><th>X</th><td>地図を出す・しまう</td></tr>
-          <tr><th>C</th><td>視点をかえる(うしろ/遠く/操縦席)</td></tr>
+          <tr><th>C</th><td>視点をかえる(うしろ/遠く/一人称)</td></tr>
+          <tr><th>R</th><td>スタート地点にもどる</td></tr>
+          <tr><th>マウスホイール</th><td>カメラを近づける・はなす(スマホは2本指)</td></tr>
           <tr><th>V</th><td>おまかせ飛行(ひかりの道を自動で飛ぶ)</td></tr>
           <tr><th>B</th><td>クラクション(車・原付)</td></tr>
           <tr><th>Space</th><td>ウィンドウをとじる</td></tr>
@@ -208,6 +210,9 @@
         </table>
         <p><b>ひかりの粒</b>:ならんだ粒を続けて集めると、音がメロディになります。</p>
         <p><b>見どころ</b>:近くを飛ぶと、旅のしおりにスタンプがおされます。</p>
+        <p><b>離陸</b>:飛行機は滑走路からスタート。↑ を押しつづけると走りだし、速くなると浮きあがります(Shift でもっと速く)。グライダーは Shift でウインチに引っぱってもらいます。</p>
+        <p><b>着陸</b>:ゆっくり(車輪が出た状態で)機体を水平にして、地面に近づけると着陸できます。滑走路のわきの4つの灯りが「白白赤赤」なら、ちょうどいい角度です。着陸したら ↓ でブレーキ。</p>
+        <p><b>一人称</b>:C を何回か押すと、操縦席からのながめになります。計器も動きます。マウスで見まわせます。</p>
         <p><b>水上飛行機</b>:水の上で Shift で加速 → ↑ で離水。ゆっくり水面におりると着水できます。</p>
         <p><b>グライダー</b>:白い粒がのぼっている所(上昇気流)の中をくるくる回ると上がれます。</p>
         <p><b>車・原付</b>:↑ でアクセル、↓ でブレーキ(止まってからもう一度でバック)、← → でハンドル。地面の上を走って探検できます。水の上は走れませんが、橋はわたれます。「港町と時計台」には道路と街があります。</p>
@@ -216,6 +221,9 @@
       </div>
     </div>
   </div>
+
+  <!-- コースの読みこみ中 -->
+  <div id="loading" class="hidden"><span>景色を準備しています…</span></div>
 
   <!-- 起動中 -->
   <div id="boot" class="overlay solid">

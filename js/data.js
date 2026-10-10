@@ -5,19 +5,19 @@ export const CRAFTS = [
   {
     id: 'plane', name: 'ひばり号', type: 'プロペラ機',
     desc: 'いちばん素直な、高翼の小さなプロペラ機。\nはじめての遊覧なら、まずはこの子と。',
-    cruise: 42, boost: 66, min: 24, maxRoll: 1.0, rollRate: 2.2, pitchRate: 0.9, turn: 0.75, clear: 2.4,
+    cruise: 42, boost: 66, min: 24, maxRoll: 1.0, rollRate: 2.2, pitchRate: 0.9, turn: 0.75, clear: 1.62, gearH: 1.62, vr: 25, gacc: 5.5,
     cam: [24, 7], engine: 'prop', pitch: 70, stats: [3, 3, 3],
   },
   {
     id: 'biplane', name: 'とんぼ号', type: '複葉機',
     desc: '翼が二枚かさなった、むかしながらの飛行機。\nくるりと小回りがきいて、低空の散歩にむいている。',
-    cruise: 34, boost: 54, min: 18, maxRoll: 1.15, rollRate: 2.9, pitchRate: 1.1, turn: 0.95, clear: 2.4,
+    cruise: 34, boost: 54, min: 18, maxRoll: 1.15, rollRate: 2.9, pitchRate: 1.1, turn: 0.95, clear: 1.66, gearH: 1.66, vr: 19, gacc: 5.5, groundPitch: 0.16,
     cam: [21, 6], engine: 'prop', pitch: 58, stats: [2, 4, 3],
   },
   {
     id: 'glider', name: 'かもめ号', type: 'グライダー',
     desc: 'エンジンのない、しずかな飛行機。\n上昇気流(白い粒がのぼる所)に乗って、高さをかせごう。',
-    cruise: 26, boost: 26, min: 14, max: 70, maxRoll: 0.95, rollRate: 1.7, pitchRate: 0.8, turn: 0.72, clear: 1.6,
+    cruise: 26, boost: 26, min: 14, max: 70, maxRoll: 0.95, rollRate: 1.7, pitchRate: 0.8, turn: 0.72, clear: 0.6, gearH: 0.6, vr: 20, gacc: 0,
     cam: [26, 6], engine: 'none', pitch: 0, glider: true, stats: [2, 3, 5],
   },
   {
@@ -29,7 +29,7 @@ export const CRAFTS = [
   {
     id: 'jet', name: 'つばめ号', type: '小型旅客機',
     desc: 'ジェットエンジンの、すこし大きな飛行機。\n速くて、長い距離をいっきに遊覧できる。',
-    cruise: 80, boost: 125, min: 50, maxRoll: 0.85, rollRate: 1.3, pitchRate: 0.6, turn: 0.42, clear: 3.2,
+    cruise: 80, boost: 125, min: 50, maxRoll: 0.85, rollRate: 1.3, pitchRate: 0.6, turn: 0.42, clear: 2.7, gearH: 2.7, vr: 52, gacc: 4.2,
     cam: [42, 11], engine: 'jet', pitch: 110, stats: [5, 1, 2],
   },
   {
@@ -62,6 +62,9 @@ export const ACHIEVEMENTS = [
   { id: 'chain', name: 'ひかりの旋律', desc: 'ひかりの粒を30こ続けて集めた' },
   { id: 'photo', name: '空の写真家', desc: '写真を10枚とった' },
   { id: 'road', name: '寄り道ドライブ', desc: '車か原付で2km走った' },
+  { id: 'takeoff', name: 'はじめての離陸', desc: '滑走路から空へ飛びたった' },
+  { id: 'landing', name: 'ぶじに着陸', desc: '飛行機で地面におりた' },
+  { id: 'butter', name: 'なめらか着陸', desc: '滑走路に、そっと(1.6m/秒より遅く)おりた' },
   { id: 'allcraft', name: 'のりもの好き', desc: '8つのりものぜんぶに乗った' },
   { id: 'course', name: 'コースめぐり', desc: 'ひとつのコースの見どころをぜんぶ見つけた' },
   { id: 'master', name: '遊覧の達人', desc: 'すべての見どころを見つけた' },

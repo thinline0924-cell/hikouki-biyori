@@ -8,7 +8,7 @@ const blank = () => ({
   flown: [], // 飛んだことのある機体
   ach: [], // ちいさな発見
   photos: [], // { img, course, craft, date }
-  settings: { music: true, sfx: true, invert: false, quality: -1 },
+  settings: { music: true, sfx: true, invert: false, quality: -1, start: 'runway' },
   last: { craft: 'plane', course: 'islands' },
 });
 

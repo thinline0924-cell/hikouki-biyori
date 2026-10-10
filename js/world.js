@@ -2,6 +2,7 @@
 import * as THREE from 'three';
 import { makeNoise, rng, smooth, lerp, clamp, part, mesh, merge, lowpolyMat, G } from './util.js';
 import { treeGeometry, sailboat, miniBalloon } from './models.js';
+import { buildRunway } from './runway.js';
 
 export const SIZE = 4800;
 export const SEG = 192;
@@ -52,6 +53,26 @@ export function makeHeightField(course) {
       let h = base(x, z);
       for (const [cx, cz, r, hc] of fl) h = lerp(h, hc, 1 - smooth(r * 0.55, r, Math.hypot(x - cx, z - cz)));
       return h;
+    };
+  }
+  // 滑走路のところは平らにする(高さは、まわりの地面の平均)
+  if (course.strip) {
+    const st = course.strip;
+    const dx = Math.sin(st.ang), dz = Math.cos(st.ang);
+    const hl = st.len / 2 + 25, hw = 40;
+    let sum = 0, n = 0;
+    for (let u = -st.len / 2; u <= st.len / 2; u += st.len / 10) {
+      for (const v of [-20, 0, 20]) { sum += hf(st.x + dx * u - dz * v, st.z + dz * u + dx * v); n++; }
+    }
+    const target = Math.max(6, sum / n);
+    st.y = target;
+    const inner = hf;
+    hf = (x, z) => {
+      const h = inner(x, z);
+      const rx = x - st.x, rz = z - st.z;
+      const u = Math.abs(rx * dx + rz * dz), v = Math.abs(-rx * dz + rz * dx);
+      const d = Math.hypot(Math.max(0, u - hl), Math.max(0, v - hw));
+      return lerp(h, target, 1 - smooth(0, 90, d));
     };
   }
   const W = SEG + 1;
@@ -311,6 +332,7 @@ export function buildWorld(course, quality = 1) {
     R, N, heightAt, surfaceAt,
     addMesh(m) { group.add(m); return m; },
     updater(fn) { updaters.push(fn); },
+    windAngle: () => course.windBase,
     solid(x, z, r, top) { colliders.push({ x, z, r, top }); },
     road(x1, z1, x2, z2) { roads.push([x1, z1, x2, z2]); },
     // 橋の上を車で走れるようにする(dir は橋の長さの向き、topAt(u) は橋の上の高さ)
@@ -541,6 +563,13 @@ export function buildWorld(course, quality = 1) {
 
   // ---------- 見どころと小物 ----------
   const spots = course.build(ctx).map((s) => ({ ...s, found: false }));
+  const runway = course.strip ? buildRunway(ctx, course.strip, !!course.night) : null;
+  // 滑走路のまわりには木を植えない
+  const nearRunway = (x, z) => {
+    if (!runway) return false;
+    const [u, v] = runway.frame.toLocal(x, z);
+    return Math.abs(u) < course.strip.len / 2 + 70 && Math.abs(v) < 95;
+  };
   for (const g of gates) {
     if (g.obj.alignPath) {
       const tg = pathTangentNear(g.obj.group.position.x, g.obj.group.position.z);
@@ -561,7 +590,7 @@ export function buildWorld(course, quality = 1) {
       const x = (R() - 0.5) * (SIZE - 300), z = (R() - 0.5) * (SIZE - 300);
       if (Math.hypot(x, z) > 2350) continue;
       const h = heightAt(x, z), ny = normalYAt(x, z);
-      if (riverAt(x, z) !== null) continue;
+      if (riverAt(x, z) !== null || nearRunway(x, z)) continue;
       if (!tdef.ok(h, ny, { flower: flowerFn(x, z, h, ny), x, z })) continue;
       let bad = false;
       for (const [ex, ez, er] of exclusions) if ((x - ex) ** 2 + (z - ez) ** 2 < er * er) { bad = true; break; }
@@ -839,7 +868,7 @@ export function buildWorld(course, quality = 1) {
   return {
     course, group, fog, heightAt, surfaceAt, spots, collectMotes, curve, pathLen,
     thermals, thermalLift, cloudDensity, windAt, update, checkGates, mapCanvas, dispose, sunDir, field,
-    groundCurve, groundLen, setMoteMode, collide, deckAt, landSpawn, roads, colliders, normalYAt,
+    groundCurve, groundLen, setMoteMode, runway, collide, deckAt, landSpawn, roads, colliders, normalYAt,
     get moteCount() { return moteN; },
   };
 }

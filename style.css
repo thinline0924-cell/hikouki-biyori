@@ -195,7 +195,7 @@ button { font: inherit; color: inherit; cursor: pointer; }
 .m-nav button:hover { background: #fff8e2; }
 .m-nav .snd.off { opacity: 0.6; text-decoration: line-through; }
 
-.m-body { display: flex; gap: 24px; justify-content: space-between; align-items: flex-start; flex: 1; min-height: 0; }
+.m-body { display: flex; gap: 24px; justify-content: space-between; align-items: flex-start; flex: 1 0 auto; }
 .m-sec h2 {
   margin: 0 0 18px; font-size: 18px; color: var(--cream); text-shadow: 0 1px 3px rgba(0,0,0,0.55); display: flex; align-items: center; gap: 8px;
 }
@@ -333,3 +333,26 @@ button { font: inherit; color: inherit; cursor: pointer; }
   .craft .badge { top: 56px; }
   #hint { bottom: auto; top: 300px; font-size: 13px; white-space: normal; text-align: center; width: 90%; }
 }
+
+/* コースの読みこみ中 */
+#loading { position: fixed; inset: 0; z-index: 25; display: flex; align-items: center; justify-content: center; background: rgba(60, 55, 30, 0.35); pointer-events: none; }
+#loading span { background: var(--cream); padding: 12px 26px; border-radius: 22px; box-shadow: 0 4px 0 var(--shadow); font-size: 17px; animation: pulse 1s ease-in-out infinite; }
+@keyframes pulse { 50% { opacity: 0.6; } }
+
+/* 低い画面(ノートパソコンなど):メニューをつめる */
+@media (max-height: 800px) and (min-width: 901px) {
+  #menu { padding-top: 10px; gap: 6px; }
+  .logo h1 { font-size: 34px; }
+  .logo-plane { width: 70px; }
+  .m-sec h2 { margin-bottom: 12px; }
+  .craft-list { grid-template-columns: repeat(4, 92px); gap: 28px 14px; }
+  .craft .disc { width: 84px; height: 84px; }
+  .craft .badge { top: 56px; }
+  .course .sb { display: none; }
+  .m-dialog .dlg-box { padding: 24px 44px 20px; min-height: 0; }
+  .m-dialog .dlg-box p { font-size: 16px; line-height: 1.7; }
+  .m-dialog .dlg-title { font-size: 19px; padding: 8px 30px; }
+  .go { margin-bottom: 14px; padding: 12px 24px 10px; font-size: 21px; }
+}
+/* 一人称のときは、操縦席の計器があるので画面の計器をかくす */
+body.fp .gauges .g { display: none; }
