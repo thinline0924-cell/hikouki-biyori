@@ -37,6 +37,18 @@ export const CRAFTS = [
     desc: '風まかせの熱気球。高さによって風の向きがかわる。\nバーナーでのぼり、弁をあけてゆっくりおりよう。',
     cruise: 0, boost: 0, min: 0, clear: 0, cam: [38, 14], engine: 'burner', balloon: true, stats: [1, 1, 5],
   },
+  {
+    id: 'car', name: 'こまち号', type: '小さな車',
+    desc: 'まるっこい、むかしの小さな自動車。\n街の道や丘を、のんびり地上から遊覧しよう。',
+    ground: true, cruise: 0, top: 24, boost: 33, accel: 6, steer: 0.75, grip: 6, rad: 1.0, clear: 0,
+    cam: [11, 6], engine: 'car', stats: [2, 3, 4],
+  },
+  {
+    id: 'scooter', name: 'ことり号', type: '原付',
+    desc: 'とことこ走る、小さな原付バイク。\nせまい道もすいすい。曲がるときに体をかたむける。',
+    ground: true, cruise: 0, top: 15, boost: 18, accel: 5, steer: 1.1, grip: 8, rad: 0.5, clear: 0,
+    cam: [8, 4.5], engine: 'scooter', stats: [1, 5, 5],
+  },
 ];
 
 export const ACHIEVEMENTS = [
@@ -49,7 +61,8 @@ export const ACHIEVEMENTS = [
   { id: 'drift', name: '風まかせ', desc: '気球で風に乗って1km旅をした' },
   { id: 'chain', name: 'ひかりの旋律', desc: 'ひかりの粒を30こ続けて集めた' },
   { id: 'photo', name: '空の写真家', desc: '写真を10枚とった' },
-  { id: 'allcraft', name: 'ひこうき好き', desc: '6機ぜんぶで空を飛んだ' },
+  { id: 'road', name: '寄り道ドライブ', desc: '車か原付で2km走った' },
+  { id: 'allcraft', name: 'のりもの好き', desc: '8つのりものぜんぶに乗った' },
   { id: 'course', name: 'コースめぐり', desc: 'ひとつのコースの見どころをぜんぶ見つけた' },
   { id: 'master', name: '遊覧の達人', desc: 'すべての見どころを見つけた' },
 ];

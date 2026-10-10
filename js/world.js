@@ -304,10 +304,23 @@ export function buildWorld(course, quality = 1) {
   }
 
   // ---------- 小物を置く道具 ----------
+  const colliders = [];
+  const roads = [];
+  const decks = [];
   const ctx = {
     R, N, heightAt, surfaceAt,
+    addMesh(m) { group.add(m); return m; },
+    updater(fn) { updaters.push(fn); },
+    solid(x, z, r, top) { colliders.push({ x, z, r, top }); },
+    road(x1, z1, x2, z2) { roads.push([x1, z1, x2, z2]); },
+    // 橋の上を車で走れるようにする(dir は橋の長さの向き、topAt(u) は橋の上の高さ)
+    deck(x, z, dx, dz, hl, hw, topAt, ramp = 0) {
+      const l = Math.hypot(dx, dz);
+      decks.push({ x, z, dx: dx / l, dz: dz / l, hl, hw, topAt, ramp });
+    },
     add(obj, x, z, o = {}) {
       const y = (o.y !== undefined ? o.y : heightAt(x, z)) + (o.yOff || 0);
+      if (o.solid) colliders.push({ x, z, r: o.solid, top: y + (o.top || 20) });
       obj.group.position.set(x, y, z);
       obj.group.rotation.y = o.rot || 0;
       obj.group.traverse((m) => { if (m.isMesh && m.castShadow === false && m.material === lowpolyMat) m.castShadow = true; });
@@ -423,24 +436,52 @@ export function buildWorld(course, quality = 1) {
   }
 
   // ---------- ひかりの道(集める粒) ----------
+  // 空を飛ぶときは空中に、地上ののりものでは地面の上にならぶ
   const ctrl = course.path.map(([x, z, a]) => {
     const s = surfaceAt(x, z);
     return new THREE.Vector3(x, s.y + a, z);
   });
   const curve = new THREE.CatmullRomCurve3(ctrl, true, 'centripetal');
   const pathLen = curve.getLength();
-  const moteN = Math.floor(pathLen / 42);
-  const motes = [];
-  for (let i = 0; i < moteN; i++) {
-    const p = curve.getPointAt(i / moteN);
-    const s = surfaceAt(p.x, p.z);
-    p.y = Math.max(p.y, s.y + 14);
-    motes.push({ p, alive: true, back: 0, ph: R() * 6 });
+  let groundCurve = curve, groundLen = pathLen;
+  if (course.groundPath) {
+    const gp = course.groundPath;
+    groundCurve = new THREE.CurvePath();
+    for (let i = 0; i < gp.length; i++) {
+      const a = gp[i], b = gp[(i + 1) % gp.length];
+      groundCurve.add(new THREE.LineCurve3(new THREE.Vector3(a[0], 0, a[1]), new THREE.Vector3(b[0], 0, b[1])));
+    }
+    groundLen = groundCurve.getLength();
   }
+  function motePoints(ground) {
+    const pts = [];
+    if (!ground) {
+      const n = Math.floor(pathLen / 42);
+      for (let i = 0; i < n; i++) {
+        const p = curve.getPointAt(i / n);
+        p.y = Math.max(p.y, surfaceAt(p.x, p.z).y + 14);
+        pts.push(p);
+      }
+    } else {
+      const n = Math.floor(groundLen / 30);
+      for (let i = 0; i < n; i++) {
+        const p = groundCurve.getPointAt(i / n);
+        const s = surfaceAt(p.x, p.z);
+        if (s.water || Math.hypot(p.x, p.z) > LIMIT) continue;
+        if (!course.groundPath && normalYAt(p.x, p.z) < 0.8) continue;
+        p.y = s.y + 2.2;
+        pts.push(p);
+      }
+    }
+    return pts;
+  }
+  const airPts = motePoints(false), groundPts = motePoints(true);
+  const CAP = Math.max(airPts.length, groundPts.length, 1);
+  let motes = [], moteN = 0;
   const moteGeo = new THREE.OctahedronGeometry(1.7, 0);
-  const moteMesh = new THREE.InstancedMesh(moteGeo, new THREE.MeshBasicMaterial({ color: 0xfff1a8 }), moteN);
+  const moteMesh = new THREE.InstancedMesh(moteGeo, new THREE.MeshBasicMaterial({ color: 0xfff1a8 }), CAP);
   // まわりのふんわりした光(やわらかい点)
-  const haloPos = new Float32Array(moteN * 3);
+  const haloPos = new Float32Array(CAP * 3);
   const haloGeo = new THREE.BufferGeometry();
   haloGeo.setAttribute('position', new THREE.BufferAttribute(haloPos, 3));
   const halo = new THREE.Points(haloGeo, new THREE.PointsMaterial({
@@ -449,6 +490,13 @@ export function buildWorld(course, quality = 1) {
   }));
   moteMesh.frustumCulled = halo.frustumCulled = false;
   group.add(moteMesh, halo);
+  function setMoteMode(ground) {
+    motes = (ground ? groundPts : airPts).map((p) => ({ p: p.clone(), alive: true, back: 0, ph: Math.random() * 6 }));
+    moteN = motes.length;
+    moteMesh.count = moteN;
+    haloGeo.setDrawRange(0, moteN);
+  }
+  setMoteMode(false);
   const _m4 = new THREE.Matrix4(), _q = new THREE.Quaternion(), _s = new THREE.Vector3(), _p = new THREE.Vector3(), _e = new THREE.Euler();
   updaters.push((t) => {
     for (let i = 0; i < moteN; i++) {
@@ -501,6 +549,7 @@ export function buildWorld(course, quality = 1) {
   }
 
   // ---------- 木 ----------
+  const treeHash = new Map();
   for (const tdef of course.trees) {
     const geo = merge(treeGeometry(tdef.kind));
     const inst = new THREE.InstancedMesh(geo, lowpolyMat, tdef.count);
@@ -513,13 +562,17 @@ export function buildWorld(course, quality = 1) {
       if (Math.hypot(x, z) > 2350) continue;
       const h = heightAt(x, z), ny = normalYAt(x, z);
       if (riverAt(x, z) !== null) continue;
-      if (!tdef.ok(h, ny, { flower: flowerFn(x, z, h, ny) })) continue;
+      if (!tdef.ok(h, ny, { flower: flowerFn(x, z, h, ny), x, z })) continue;
       let bad = false;
       for (const [ex, ez, er] of exclusions) if ((x - ex) ** 2 + (z - ez) ** 2 < er * er) { bad = true; break; }
       if (bad) continue;
       const sc = 0.8 + R() * 0.9;
       m4.compose(p.set(x, h - 0.4, z), q.setFromEuler(e.set(0, R() * 6.28, 0)), s.set(sc, sc * (0.85 + R() * 0.35), sc));
       inst.setMatrixAt(n, m4);
+      if (tdef.kind !== 'bush') {
+        const key = Math.floor(x / 20) + ',' + Math.floor(z / 20);
+        (treeHash.get(key) || treeHash.set(key, []).get(key)).push([x, z, 0.75 * sc, h + 7 * sc]);
+      }
       _col.setHSL(0, 0, 0.88 + R() * 0.24);
       inst.setColorAt(n, _col);
       n++;
@@ -697,6 +750,83 @@ export function buildWorld(course, quality = 1) {
     return { x: Math.sin(a) * s, z: Math.cos(a) * s, a, s };
   }
 
+  // 地上ののりもの用:ぶつかる物から押し出す(ぶつかった物を返す)
+  function collide(p, rad, trees = true) {
+    let hit = null;
+    for (const c of colliders) {
+      const dx = p.x - c.x, dz = p.z - c.z, rr = c.r + rad;
+      const d2 = dx * dx + dz * dz;
+      if (d2 < rr * rr && p.y < c.top) {
+        const d = Math.sqrt(d2) || 0.01;
+        p.x = c.x + (dx / d) * rr;
+        p.z = c.z + (dz / d) * rr;
+        hit = c;
+      }
+    }
+    if (trees) {
+      const ix = Math.floor(p.x / 20), iz = Math.floor(p.z / 20);
+      for (let a = -1; a <= 1; a++) for (let b = -1; b <= 1; b++) {
+        const list = treeHash.get(ix + a + ',' + (iz + b));
+        if (!list) continue;
+        for (const [x, z, r, top] of list) {
+          const dx = p.x - x, dz = p.z - z, rr = r + rad;
+          const d2 = dx * dx + dz * dz;
+          if (d2 < rr * rr && p.y < top) {
+            const d = Math.sqrt(d2) || 0.01;
+            p.x = x + (dx / d) * rr;
+            p.z = z + (dz / d) * rr;
+            hit = { x, z, r, tree: true };
+          }
+        }
+      }
+    }
+    return hit;
+  }
+  // 橋の上の高さ(今の高さ y から乗れる橋だけ)
+  function deckAt(x, z, y) {
+    let best = null;
+    for (const d of decks) {
+      const rx = x - d.x, rz = z - d.z;
+      const u = rx * d.dx + rz * d.dz, v = -rx * d.dz + rz * d.dx;
+      if (Math.abs(v) > d.hw || Math.abs(u) > d.hl + d.ramp) continue;
+      let top;
+      if (Math.abs(u) <= d.hl) top = d.topAt(u);
+      else {
+        const e = Math.sign(u) * d.hl;
+        top = lerp(d.topAt(e), Math.max(heightAt(x, z), 0), (Math.abs(u) - d.hl) / d.ramp);
+      }
+      if (top < y + 3 && top > y - 6 && (best === null || top > best)) best = top;
+    }
+    return best;
+  }
+  // 地上ののりもののスタート地点
+  // まわりも陸か(小さな島にとじこめられないように)
+  function roomy(x, z) {
+    for (let k = 0; k < 12; k++) {
+      const a = (k / 12) * Math.PI * 2;
+      for (const r of [60, 140]) if (surfaceAt(x + Math.cos(a) * r, z + Math.sin(a) * r).water) return false;
+    }
+    return true;
+  }
+  function landSpawn() {
+    if (course.groundSpawn) return course.groundSpawn;
+    for (let i = 0; i < 300; i++) {
+      const p = groundCurve.getPointAt(i / 300);
+      const s = surfaceAt(p.x, p.z);
+      if (!s.water && s.y < 400 && normalYAt(p.x, p.z) > 0.93 && Math.hypot(p.x, p.z) < LIMIT - 200 && roomy(p.x, p.z)) {
+        const tg = groundCurve.getTangentAt(i / 300);
+        return { x: p.x, z: p.z, dir: [tg.x, tg.z] };
+      }
+    }
+    for (let r = 40; r < 2000; r += 30) {
+      for (let a = 0; a < 6.28; a += 0.25) {
+        const x = Math.cos(a) * r, z = Math.sin(a) * r;
+        if (!surfaceAt(x, z).water && normalYAt(x, z) > 0.93 && roomy(x, z)) return { x, z, dir: [-x, -z] };
+      }
+    }
+    return course.spawn;
+  }
+
   function dispose() {
     group.traverse((o) => {
       if (o.geometry) o.geometry.dispose();
@@ -707,7 +837,9 @@ export function buildWorld(course, quality = 1) {
   }
 
   return {
-    course, group, fog, heightAt, surfaceAt, spots, motes, collectMotes, moteCount: moteN, curve, pathLen,
+    course, group, fog, heightAt, surfaceAt, spots, collectMotes, curve, pathLen,
     thermals, thermalLift, cloudDensity, windAt, update, checkGates, mapCanvas, dispose, sunDir, field,
+    groundCurve, groundLen, setMoteMode, collide, deckAt, landSpawn, roads, colliders, normalYAt,
+    get moteCount() { return moteN; },
   };
 }

@@ -76,7 +76,9 @@ function setCraft(craft) {
 function placeCraft() {
   if (!G.world || !G.model) return;
   G.flyer = new Flyer(G.craft, G.model);
-  const sp = G.course.spawn;
+  const ground = !!G.craft.ground;
+  G.world.setMoteMode(ground);
+  const sp = ground ? G.world.landSpawn() : G.course.spawn;
   G.flyer.place(G.world, sp.x, sp.z, sp.dir[0], sp.dir[1]);
   apReset();
   cam.snap = true;
@@ -84,13 +86,17 @@ function placeCraft() {
 }
 
 // ---------------------------------------------------------------- おまかせ飛行(自動操縦)
-const AP = { u: 0, climb: false };
+const AP = { u: 0, climb: false, stuck: 0 };
+// 地上ののりものは地面の道、空の機体は空の道をたどる
+const apPath = () => (G.craft.ground ? { cv: G.world.groundCurve, len: G.world.groundLen } : { cv: G.world.curve, len: G.world.pathLen });
 function apReset() {
   const w = G.world, f = G.flyer;
   if (!w || !f) return;
+  const { cv } = apPath();
   let best = 0, bd = Infinity;
   for (let i = 0; i < 300; i++) {
-    const p = w.curve.getPointAt(i / 300);
+    const p = cv.getPointAt(i / 300);
+    if (G.craft.ground) p.y = f.pos.y;
     const d = p.distanceToSquared(f.pos);
     if (d < bd) { bd = d; best = i / 300; }
   }
@@ -100,10 +106,12 @@ function apReset() {
 const _tp = new THREE.Vector3();
 function autopilot() {
   const w = G.world, f = G.flyer, c = f.c;
-  let p = w.curve.getPointAt(AP.u, _tp);
+  const { cv, len } = apPath();
+  if (c.ground) return autodrive(w, f, cv, len);
+  let p = cv.getPointAt(AP.u, _tp);
   for (let k = 0; k < 60 && p.distanceTo(f.pos) < (c.balloon ? 160 : 70 + f.speed); k++) {
-    AP.u = (AP.u + 6 / w.pathLen) % 1;
-    p = w.curve.getPointAt(AP.u, _tp);
+    AP.u = (AP.u + 6 / len) % 1;
+    p = cv.getPointAt(AP.u, _tp);
   }
   const target = p.clone();
   if (c.glider && w.thermals.length) {
@@ -137,6 +145,21 @@ function autopilot() {
     }
   }
   return inp;
+}
+
+// 地上ののりものの自動運転:道の少し先をめざして走る
+function autodrive(w, f, cv, len) {
+  let p = cv.getPointAt(AP.u, _tp);
+  const near = () => Math.hypot(p.x - f.pos.x, p.z - f.pos.z) < 14 + Math.abs(f.speed) * 0.8 || w.surfaceAt(p.x, p.z).water;
+  for (let k = 0; k < 80 && near(); k++) {
+    AP.u = (AP.u + 4 / len) % 1;
+    p = cv.getPointAt(AP.u, _tp);
+  }
+  // 動けなくなったら、道の先へ目標をとばす
+  AP.stuck = Math.abs(f.speed) < 1 ? AP.stuck + 1 : 0;
+  if (AP.stuck > 120) { AP.u = (AP.u + 60 / len) % 1; AP.stuck = 0; }
+  const diff = wrapAngle(Math.atan2(p.x - f.pos.x, p.z - f.pos.z) - f.yaw);
+  return { pitch: Math.abs(diff) > 1.2 ? 0.35 : 0.7, roll: clamp(-diff * 2, -1, 1), yaw: 0, boost: false };
 }
 
 // ---------------------------------------------------------------- 操作
@@ -205,7 +228,7 @@ addEventListener('keydown', (e) => {
     return;
   }
   if (G.mode !== 'play') return;
-  const map = { KeyZ: 'photo', KeyX: 'map', KeyC: 'view', KeyV: 'auto', Escape: 'pause', KeyP: 'pause', KeyM: 'music', Space: 'dialog', KeyH: 'help' };
+  const map = { KeyZ: 'photo', KeyX: 'map', KeyC: 'view', KeyV: 'auto', Escape: 'pause', KeyP: 'pause', KeyM: 'music', Space: 'dialog', KeyH: 'help', KeyB: 'horn' };
   if (map[e.code]) act(map[e.code]);
 });
 addEventListener('keyup', (e) => keys.delete(e.code));
@@ -230,6 +253,7 @@ function act(a) {
   else if (a === 'music') toggleMusic();
   else if (a === 'dialog') closeDialog();
   else if (a === 'help') { pause(); openOverlay('help'); }
+  else if (a === 'horn') { if (G.craft.ground) sound.horn(G.craft.id); }
 }
 function syncAutoUI() {
   $('autoTag').classList.toggle('hidden', !G.auto);
@@ -274,7 +298,7 @@ $('pauseBtn').addEventListener('click', () => act('pause'));
 }
 
 // ドラッグで見まわす
-const cam = { pos: new THREE.Vector3(), look: new THREE.Vector3(), yaw: 0, pitch: 0, drag: null, lastDrag: -99, snap: true, cine: null, fov: 60 };
+const cam = { vel: new THREE.Vector3(), prev: new THREE.Vector3(), pos: new THREE.Vector3(), look: new THREE.Vector3(), yaw: 0, pitch: 0, drag: null, lastDrag: -99, snap: true, cine: null, fov: 60 };
 renderer.domElement.addEventListener('pointerdown', (e) => {
   firstGesture();
   cam.drag = { x: e.clientX, y: e.clientY, id: e.pointerId };
@@ -293,7 +317,7 @@ renderer.domElement.addEventListener('pointerup', endDrag);
 renderer.domElement.addEventListener('pointercancel', endDrag);
 
 // ---------------------------------------------------------------- カメラ
-const COCKPIT = { plane: [0, 0.75, 1.2], biplane: [0, 1.25, -0.5], glider: [0, 0.6, 1.8], seaplane: [0, 0.95, 1.1], jet: [0, 0.7, 7.4], balloon: [0, 2.4, 0] };
+const COCKPIT = { plane: [0, 0.75, 1.2], biplane: [0, 1.25, -0.5], glider: [0, 0.6, 1.8], seaplane: [0, 0.95, 1.1], jet: [0, 0.7, 7.4], balloon: [0, 2.4, 0], car: [0.3, 1.25, 0.1], scooter: [0, 1.85, 0] };
 const _v = new THREE.Vector3(), _f = new THREE.Vector3(), _d = new THREE.Vector3(), _l = new THREE.Vector3();
 function updateCamera(dt) {
   const f = G.flyer, c = f.c, w = G.world;
@@ -308,7 +332,7 @@ function updateCamera(dt) {
   let rate = 3.5;
   if (mode === 'menu') {
     const a = G.t * 0.07 + cam.yaw;
-    _d.set(Math.sin(a) * dist * 1.7, h * 1.3 + 8 + cam.pitch * 30, Math.cos(a) * dist * 1.7).add(f.pos);
+    _d.set(Math.sin(a) * dist * 1.7, (c.ground ? h * 0.7 : h * 1.3 + 8) + cam.pitch * 30, Math.cos(a) * dist * 1.7).add(f.pos);
     _l.copy(f.pos);
     if (c.balloon) _l.y += 12;
     rate = 2;
@@ -320,7 +344,8 @@ function updateCamera(dt) {
     if (c.balloon) {
       _d.y += 8;
       _l.copy(f.pos).y += 11;
-    } else _l.copy(f.pos).addScaledVector(_f, 14).y += 2;
+    } else if (c.ground) _l.copy(f.pos).addScaledVector(_f, 6).y += 1.4;
+    else _l.copy(f.pos).addScaledVector(_f, 14).y += 2;
   } else if (mode === 'cine') {
     if (!cam.cine || f.pos.distanceTo(cam.cine) > 340) {
       const side = Math.random() < 0.5 ? -1 : 1;
@@ -352,6 +377,8 @@ function updateCamera(dt) {
   }
   const s = w.surfaceAt(cam.pos.x, cam.pos.z);
   if (mode !== 'cockpit') cam.pos.y = Math.max(cam.pos.y, s.y + 3);
+  if (dt > 0) cam.vel.subVectors(cam.pos, cam.prev).divideScalar(dt);
+  cam.prev.copy(cam.pos);
   camera.position.copy(cam.pos);
   if (G.shake > 0) {
     camera.position.x += (Math.random() - 0.5) * G.shake;
@@ -360,8 +387,9 @@ function updateCamera(dt) {
   }
   camera.up.set(0, 1, 0);
   camera.lookAt(cam.look);
-  if (mode === 'chase' && !c.balloon) camera.rotateZ(-f.roll * 0.22);
-  if (mode === 'cockpit' && !c.balloon) camera.rotateZ(-f.roll * 0.9);
+  if (mode === 'chase' && !c.balloon && !c.ground) camera.rotateZ(-f.roll * 0.22);
+  if (mode === 'cockpit' && !c.balloon && !c.ground) camera.rotateZ(-f.roll * 0.9);
+  if (mode === 'cockpit' && c.id === 'scooter') camera.rotateZ(-f.roll * 0.7);
   const over = c.balloon ? 0 : clamp((f.speed - c.cruise) / Math.max(c.boost - c.cruise, 1), 0, 1);
   cam.fov += (60 + over * 9 - cam.fov) * damp(2, dt);
   if (Math.abs(camera.fov - cam.fov) > 0.01) {
@@ -382,9 +410,14 @@ function step(dt) {
 
   const cd = w.cloudDensity(camera.position);
   $('cloudfog').style.opacity = (cd * 0.8).toFixed(3);
+  // カメラと機体の距離・近づく速さ(ドップラー効果:近づくと高く、遠ざかると低く聞こえる)
+  _v.subVectors(camera.position, f.pos);
+  const dist = _v.length();
+  const vr = dist > 1 ? f.vel.dot(_v) / dist - cam.vel.dot(_v) / dist : 0;
+  const dop = clamp(343 / (343 - clamp(vr, -150, 150)), 0.7, 1.5);
   sound.flight({
-    speed: f.speed, throttle: f.throttle, engine: G.craft.engine, pitch: G.craft.pitch,
-    burner: f.burner, cloud: cd, active: playing,
+    id: G.craft.id, speed: f.speed, throttle: f.throttle, onWater: f.onWater,
+    burner: f.burner, cloud: cd, active: playing, dist, dop: G.camMode === 1 ? dop : 1,
   });
   if (!playing) return;
 
@@ -401,6 +434,7 @@ function step(dt) {
   }
   if (got) SV.save();
   if (G.t - G.lastMote > 5 && G.chain) G.chain = 0;
+  if (f.c.ground && f.odo > 2000) ach('road');
 
   // 見どころ
   for (const s of w.spots) {
@@ -466,7 +500,16 @@ function handleEvent(e) {
     toast('離水しました!');
   } else if (e.type === 'shore' && G.t - G.bumpT > 2) {
     G.bumpT = G.t;
-    hint('岸についた。向きをかえよう');
+    hint(G.craft.ground ? 'ここから先は水。向きをかえよう(橋があればわたれます)' : '岸についた。向きをかえよう');
+  } else if (e.type === 'crash' && G.t - G.bumpT > 1.2) {
+    G.bumpT = G.t;
+    sound.bump();
+    G.shake = 0.6;
+    hint('ゴツン!ゆっくり行こう');
+  } else if (e.type === 'land' && G.t - G.bumpT > 0.8) {
+    G.bumpT = G.t;
+    sound.bump();
+    G.shake = 0.5;
   } else if (e.type === 'edge' && G.t - G.edgeT > 6) {
     G.edgeT = G.t;
     hint('この先は霧がこくて進めないみたい');
@@ -552,6 +595,7 @@ function updateHud(dt) {
   } else if (c.balloon) {
     extra = `<span class="k">熱</span>&nbsp;<b>${'■'.repeat(Math.round(f.heat * 6))}${'□'.repeat(6 - Math.round(f.heat * 6))}</b>`;
   } else if (f.onWater) extra = '<b>水上</b>';
+  else if (c.ground) extra = `<span class="k">エンジン</span>&nbsp;<b>${Math.round((sound.rpm || 0) / 100) * 100}</b><span class="u">rpm</span>`;
   $('gExtra').innerHTML = extra;
   const list = S.stamps[G.course.id] || [];
   $('spotTxt').textContent = `${list.length}/${w.spots.length}`;
@@ -618,13 +662,25 @@ function drawMap() {
   const toPx = (x, z) => [(x / m.range * 0.5 + 0.5) * S2, (z / m.range * 0.5 + 0.5) * S2];
   g.clearRect(0, 0, S2, S2);
   g.drawImage(m.canvas, 0, 0, S2, S2);
+  // 道
+  if (w.roads.length) {
+    g.strokeStyle = 'rgba(110,108,114,0.85)';
+    g.lineWidth = 1.6;
+    g.beginPath();
+    for (const [x1, z1, x2, z2] of w.roads) {
+      const a = toPx(x1, z1), b = toPx(x2, z2);
+      g.moveTo(a[0], a[1]);
+      g.lineTo(b[0], b[1]);
+    }
+    g.stroke();
+  }
   // ひかりの道
   g.strokeStyle = 'rgba(255,240,170,0.9)';
   g.setLineDash([2, 5]);
   g.lineWidth = 2;
   g.beginPath();
   for (let i = 0; i <= 120; i++) {
-    const p = w.curve.getPointAt((i % 120) / 120);
+    const p = apPath().cv.getPointAt((i % 120) / 120);
     const [x, y] = toPx(p.x, p.z);
     i ? g.lineTo(x, y) : g.moveTo(x, y);
   }
@@ -758,7 +814,7 @@ function makeThumbs() {
   renderer.setSize(innerWidth, innerHeight);
 }
 
-const LAND = { islands: '#6f9a58', canyon: '#b9805a', fjord: '#7d8494', aurora: '#30445e', hills: '#86b462' };
+const LAND = { islands: '#6f9a58', canyon: '#b9805a', fjord: '#7d8494', aurora: '#30445e', hills: '#86b462', town: '#8aae66' };
 function coursePic(course) {
   const f = makeHeightField(course);
   const pts = silhouette(course, f);
@@ -859,6 +915,7 @@ function startFlight() {
   $('hud').classList.remove('hidden');
   if (coarse) $('touch').classList.remove('hidden');
   $('boostLbl').textContent = G.craft.balloon ? 'バーナー' : G.craft.glider ? '—' : '加速';
+  document.querySelectorAll('.groundOnly').forEach((b) => b.classList.toggle('hidden', !G.craft.ground));
   G.mode = 'play';
   G.camMode = 0;
   $('viewLbl').textContent = 'うしろ';
@@ -876,11 +933,15 @@ function startFlight() {
     seaplane: 'まずは水の上。Shift で加速して、↑ で離水しよう',
     glider: '白い粒がのぼる所(上昇気流)の中で、くるくる回ると上がれます',
     balloon: '↑ か Shift でバーナー、↓ で弁。高さで風の向きがかわります(右下の矢印)',
+    car: '↑ アクセル / ↓ ブレーキ・バック / ← → ハンドル / Shift で加速 / B でクラクション',
+    scooter: '↑ アクセル / ↓ ブレーキ・バック / ← → ハンドル / Shift で加速 / B でクラクション',
   };
   const HT = {
     seaplane: 'まずは水の上。加速ボタンで速くして、スティックを上へたおすと離水',
     glider: '白い粒がのぼる所(上昇気流)の中で、くるくる回ると上がれます',
     balloon: 'スティック上(加速ボタン)でバーナー、下で弁。高さで風の向きがかわります',
+    car: 'スティックを上でアクセル、下でブレーキ、左右でハンドル',
+    scooter: 'スティックを上でアクセル、下でブレーキ、左右でハンドル',
   };
   hint(coarse ? HT[G.craft.id] || 'スティックで操縦、加速ボタンで速く、写真ボタンで撮影' : H[G.craft.id], 9);
   if (S.flown.length >= CRAFTS.length) ach('allcraft');
@@ -986,7 +1047,7 @@ function renderJournal() {
   const allSpots = {};
   const html = [];
   const total = COURSES.reduce((n, c) => n + (S.stamps[c.id] || []).length, 0);
-  html.push(`<div class="j-stats"><span>見どころ ${total} / ${COURSES.length * 4}</span><span>ひかりの粒 ${S.motes}</span><span>いちばん長いれんさ ${S.bestChain}</span><span>写真 ${S.photoCount || 0}枚</span><span>飛んだ機体 ${S.flown.length} / ${CRAFTS.length}</span></div>`);
+  html.push(`<div class="j-stats"><span>見どころ ${total} / ${COURSES.length * 4}</span><span>ひかりの粒 ${S.motes}</span><span>いちばん長いれんさ ${S.bestChain}</span><span>写真 ${S.photoCount || 0}枚</span><span>乗ったのりもの ${S.flown.length} / ${CRAFTS.length}</span></div>`);
   for (const c of COURSES) {
     const names = c.id === G.course.id && G.world ? G.world.spots : (allSpots[c.id] || spotNames(c));
     const got = S.stamps[c.id] || [];
@@ -1013,6 +1074,7 @@ function spotNames(course) {
   const stub = {
     R: Math.random, N: f.N, heightAt: f.heightAt, surfaceAt: (x, z) => ({ y: Math.max(0, f.heightAt(x, z)), water: f.heightAt(x, z) < 0 }),
     add: (o) => o, gate() {}, boats() {}, mist() {}, aurora() {}, floaters() {},
+    addMesh() {}, updater() {}, solid() {}, road() {}, deck() {},
     findShore: () => ({ x: 0, z: 0 }),
   };
   _spotCache[course.id] = course.build(stub).map((s) => ({ id: s.id, name: s.name }));

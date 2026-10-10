@@ -21,13 +21,23 @@ export class Flyer {
     this.burner = false;
     this.agl = 100; // 地面(水面)からの高さ
     this.sway = 0;
+    // 地上ののりもの用
+    this.gNormal = new THREE.Vector3(0, 1, 0);
+    this.vy = 0;
+    this.airborne = false;
+    this.odo = 0;
   }
 
   place(world, x, z, dirX, dirZ) {
     this.yaw = Math.atan2(dirX, dirZ);
     const s = world.surfaceAt(x, z);
     this.pitch = this.roll = 0;
-    if (this.c.seaplane && s.water) {
+    if (this.c.ground) {
+      this.pos.set(x, s.y, z);
+      this.speed = 0;
+      this.vy = 0;
+      this.airborne = false;
+    } else if (this.c.seaplane && s.water) {
       this.pos.set(x, s.y + this.c.clear, z);
       this.onWater = true;
       this.speed = 0;
@@ -50,7 +60,8 @@ export class Flyer {
   // inp: { pitch(+で上), roll(+で右), yaw, boost, down }
   update(dt, inp, world, t) {
     const ev = [];
-    if (this.c.balloon) this.updateBalloon(dt, inp, world, ev);
+    if (this.c.ground) this.updateGround(dt, inp, world, ev);
+    else if (this.c.balloon) this.updateBalloon(dt, inp, world, ev);
     else this.updatePlane(dt, inp, world, ev, t);
 
     // 世界のはしでは、やさしく中心へ向きをかえる
@@ -67,7 +78,7 @@ export class Flyer {
       ev.push({ type: 'edge' });
     }
     const s = world.surfaceAt(this.pos.x, this.pos.z);
-    this.agl = this.pos.y - s.y;
+    this.agl = this.c.ground ? 0 : this.pos.y - s.y;
     this.overWater = s.water;
     this.syncModel(dt);
     return ev;
@@ -131,11 +142,106 @@ export class Flyer {
         ev.push({ type: s.water ? 'splash' : 'bump' });
       }
     }
+    // 建物などにぶつかったら、よけて上へ
+    if (world.collide(this.pos, 3, false)) {
+      this.pitch = Math.max(this.pitch, 0.3);
+      ev.push({ type: 'bump' });
+    }
     // 地面が近いと、少し自動で上をむく(やさしさ)
     const ahead = world.surfaceAt(this.pos.x + this.vel.x * 1.5, this.pos.z + this.vel.z * 1.5);
     if (this.pos.y < ahead.y + c.clear + 6 && !(c.seaplane && ahead.water)) {
       this.pitch += damp(2.5, dt) * (0.35 - this.pitch) * 0.6;
     }
+  }
+
+  // 地上ののりもの(車・原付):↑アクセル ↓ブレーキ・バック ←→ハンドル
+  groundY(world, x, z, y) {
+    const s = world.surfaceAt(x, z);
+    const deck = world.deckAt(x, z, y);
+    if (deck !== null && (s.water || deck > s.y - 0.5)) return { y: deck, deck: true };
+    if (s.water) return null;
+    return { y: s.y, deck: false };
+  }
+
+  updateGround(dt, inp, world, ev) {
+    const c = this.c;
+    const top = inp.boost ? c.boost : c.top;
+    const pedal = inp.pitch;
+    let target = 0, rate = 2.5;
+    if (pedal > 0.1) { target = top * pedal; rate = c.accel * (inp.boost ? 1.3 : 1); }
+    else if (pedal < -0.1) {
+      if (this.speed > 0.5) { target = 0; rate = 14; } else { target = -6 * -pedal; rate = 4; }
+    }
+    if (!this.airborne) this.speed += clamp(target - this.speed, -rate * dt, rate * dt);
+    this.throttle = clamp(Math.max(pedal, 0) * (inp.boost ? 1 : 0.8), 0, 1);
+
+    const fx = Math.sin(this.yaw), fz = Math.cos(this.yaw);
+    // 坂道:のぼりは遅く、くだりは速く
+    if (!this.airborne) {
+      const a = this.groundY(world, this.pos.x + fx * 1.5, this.pos.z + fz * 1.5, this.pos.y);
+      const b = this.groundY(world, this.pos.x - fx * 1.5, this.pos.z - fz * 1.5, this.pos.y);
+      if (a && b) {
+        const sl = (a.y - b.y) / 3;
+        this.speed -= 9.8 * (sl / Math.sqrt(1 + sl * sl)) * 0.75 * dt;
+      }
+    }
+    // ハンドル
+    const sp = Math.abs(this.speed);
+    const k = clamp(sp / 5, 0, 1) * (1 - 0.4 * clamp(sp / c.boost, 0, 1));
+    if (!this.airborne) this.yaw -= c.steer * inp.roll * k * Math.sign(this.speed || 1) * dt * 1.6;
+    // 原付はかたむく、車は少しゆれる
+    const leanT = c.id === 'scooter' ? inp.roll * clamp(sp / 9, 0, 1) * 0.5 : -inp.roll * clamp(sp / 15, 0, 1) * 0.05;
+    this.roll += (leanT - this.roll) * damp(5, dt);
+    this.pitch = 0;
+
+    const nx = this.pos.x + fx * this.speed * dt, nz = this.pos.z + fz * this.speed * dt;
+    const g = this.groundY(world, nx, nz, this.pos.y);
+    if (!g) {
+      if (sp > 3) ev.push({ type: 'shore' });
+      this.speed = 0;
+    } else if (!this.airborne && g.y - this.pos.y > 1.6 && !g.deck) {
+      // 急ながけはのぼれない
+      this.speed *= -0.2;
+      if (sp > 4) ev.push({ type: 'crash' });
+    } else {
+      const moved = Math.hypot(nx - this.pos.x, nz - this.pos.z);
+      this.odo += moved;
+      this.pos.x = nx;
+      this.pos.z = nz;
+      if (this.airborne) {
+        this.vy -= 9.8 * 1.5 * dt;
+        this.pos.y += this.vy * dt;
+        if (this.pos.y <= g.y) {
+          if (this.vy < -7) ev.push({ type: 'land' });
+          this.pos.y = g.y;
+          this.vy = 0;
+          this.airborne = false;
+        }
+      } else if (g.y < this.pos.y - 1.0 && sp > 9) {
+        // 坂のてっぺんで、ふわっと浮く
+        this.airborne = true;
+        this.vy = this.gvy || 0;
+      } else {
+        this.gvy = (g.y - this.pos.y) / Math.max(dt, 0.001);
+        this.pos.y = g.y;
+      }
+    }
+    // ぶつかる物(建物・木・小物)
+    const hit = world.collide(this.pos, c.rad);
+    if (hit) {
+      if (sp > 4) ev.push({ type: 'crash' });
+      this.speed *= 0.4;
+    }
+    // 地面の傾き(車体の向き)
+    if (!this.airborne) {
+      const e = 1.6;
+      const h = (x, z) => { const q = this.groundY(world, x, z, this.pos.y); return q ? q.y : this.pos.y; };
+      const dx = h(this.pos.x + e, this.pos.z) - h(this.pos.x - e, this.pos.z);
+      const dz = h(this.pos.x, this.pos.z + e) - h(this.pos.x, this.pos.z - e);
+      const n = new THREE.Vector3(-dx, 2 * e, -dz).normalize();
+      this.gNormal.lerp(n, damp(10, dt)).normalize();
+    }
+    this.vel.set(fx * this.speed, this.vy, fz * this.speed);
   }
 
   updateOnWater(dt, inp, world, ev) {
@@ -211,7 +317,16 @@ export class Flyer {
     const m = this.model;
     if (!m) return;
     m.root.position.copy(this.pos);
-    if (this.c.balloon) {
+    if (this.c.ground) {
+      const up = this.gNormal;
+      const f = new THREE.Vector3(Math.sin(this.yaw), 0, Math.cos(this.yaw));
+      f.addScaledVector(up, -f.dot(up)).normalize();
+      const x = new THREE.Vector3().crossVectors(up, f);
+      m.root.quaternion.setFromRotationMatrix(new THREE.Matrix4().makeBasis(x, up, f));
+      if (m.lean) m.lean.rotation.z = this.roll;
+      if (m.body) m.body.rotation.z = this.roll;
+      for (const w of m.wheels) w.rotation.x += (this.speed / m.wheelR) * dt;
+    } else if (this.c.balloon) {
       this.sway += dt;
       m.root.rotation.set(Math.sin(this.sway * 0.7) * 0.03, this.yaw, Math.sin(this.sway * 0.53) * 0.03, 'YXZ');
       if (m.flame) {

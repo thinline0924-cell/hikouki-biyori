@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
   <title>ひこうき日和</title>
-  <meta name="description" content="いろいろな飛行機で、自然の中をのんびり遊覧するローポリ3Dゲーム">
+  <meta name="description" content="いろいろな飛行機や車で、自然や街をのんびり遊覧するローポリ3Dゲーム">
   <meta name="theme-color" content="#8f8b5a">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -97,6 +97,7 @@
       <button data-act="view">視点</button>
       <button data-act="map">地図</button>
       <button data-act="auto">おまかせ</button>
+      <button data-act="horn" class="groundOnly hidden">プップー</button>
     </div>
   </div>
 
@@ -110,7 +111,7 @@
         <svg viewBox="0 0 120 60" class="logo-plane"><path d="M8 34 Q40 26 70 30 L96 22 Q104 21 104 27 L86 36 Q60 44 20 42 Z" fill="#f5edd3" stroke="#3a3f5c" stroke-width="3" stroke-linejoin="round"/><path d="M40 31 L56 12 L64 12 L58 32" fill="#c25b45" stroke="#3a3f5c" stroke-width="3" stroke-linejoin="round"/><path d="M14 40 L6 28 L14 28 L22 36" fill="#c25b45" stroke="#3a3f5c" stroke-width="3" stroke-linejoin="round"/><path d="M104 50 q-12 6 -24 0 t-24 0" fill="none" stroke="#f5edd3" stroke-width="3" stroke-linecap="round" stroke-dasharray="2 7"/></svg>
         <div>
           <h1>ひこうき日和</h1>
-          <p class="sub">のんびり、空の遊覧へ。<span class="ver">ver 2026.10.10</span></p>
+          <p class="sub">のんびり、空の遊覧へ。<span class="ver">ver 2026.10.11</span></p>
         </div>
       </div>
       <nav class="m-nav">
@@ -122,7 +123,7 @@
     </header>
     <div class="m-body">
       <section class="m-sec crafts">
-        <h2><span>1</span>機体をえらぶ</h2>
+        <h2><span>1</span>のりものをえらぶ</h2>
         <div id="craftList" class="craft-list"></div>
       </section>
       <section class="m-sec courses">
@@ -200,6 +201,7 @@
           <tr><th>X</th><td>地図を出す・しまう</td></tr>
           <tr><th>C</th><td>視点をかえる(うしろ/遠く/操縦席)</td></tr>
           <tr><th>V</th><td>おまかせ飛行(ひかりの道を自動で飛ぶ)</td></tr>
+          <tr><th>B</th><td>クラクション(車・原付)</td></tr>
           <tr><th>Space</th><td>ウィンドウをとじる</td></tr>
           <tr><th>Esc</th><td>ひとやすみ</td></tr>
           <tr><th>マウスでドラッグ</th><td>まわりを見まわす</td></tr>
@@ -208,6 +210,7 @@
         <p><b>見どころ</b>:近くを飛ぶと、旅のしおりにスタンプがおされます。</p>
         <p><b>水上飛行機</b>:水の上で Shift で加速 → ↑ で離水。ゆっくり水面におりると着水できます。</p>
         <p><b>グライダー</b>:白い粒がのぼっている所(上昇気流)の中をくるくる回ると上がれます。</p>
+        <p><b>車・原付</b>:↑ でアクセル、↓ でブレーキ(止まってからもう一度でバック)、← → でハンドル。地面の上を走って探検できます。水の上は走れませんが、橋はわたれます。「港町と時計台」には道路と街があります。</p>
         <p><b>熱気球</b>:高さによって風の向きがかわります。右下の矢印を見て、行きたい方向の風をさがしましょう。</p>
         <p class="note">スマホでは、左下のスティックと右のボタンで操作できます。</p>
       </div>

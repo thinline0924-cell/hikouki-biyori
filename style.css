@@ -123,7 +123,7 @@ button { font: inherit; color: inherit; cursor: pointer; }
 @keyframes toastOut { to { transform: translateX(30px); opacity: 0; } }
 #hint {
   position: absolute; left: 50%; bottom: 26px; transform: translateX(-50%);
-  color: var(--cream); font-size: 15px; text-shadow: 0 1px 3px rgba(0,0,0,0.6); transition: opacity 0.6s; white-space: nowrap;
+  color: var(--cream); font-size: 15px; text-shadow: 0 1px 3px rgba(0,0,0,0.6); transition: opacity 0.6s; white-space: nowrap; bottom: 74px;
 }
 
 /* ---------- 会話ウィンドウ ---------- */
@@ -200,7 +200,7 @@ button { font: inherit; color: inherit; cursor: pointer; }
   margin: 0 0 18px; font-size: 18px; color: var(--cream); text-shadow: 0 1px 3px rgba(0,0,0,0.55); display: flex; align-items: center; gap: 8px;
 }
 .m-sec h2 span { display: inline-block; width: 30px; height: 30px; line-height: 30px; text-align: center; border-radius: 50%; background: var(--cream); color: var(--ink); font: 20px/30px var(--latin); text-shadow: none; box-shadow: 0 2px 0 var(--shadow); }
-.craft-list { display: grid; grid-template-columns: repeat(3, 108px); gap: 34px 18px; padding-top: 6px; }
+.craft-list { display: grid; grid-template-columns: repeat(4, 108px); gap: 34px 18px; padding-top: 6px; }
 .craft { position: relative; border: 0; background: none; padding: 0; text-align: center; }
 .craft .disc {
   display: block; width: 100px; height: 100px; border-radius: 50%; background: var(--cream); margin: 0 auto; overflow: hidden;
@@ -213,19 +213,20 @@ button { font: inherit; color: inherit; cursor: pointer; }
 .craft.sel .disc { transform: scale(1.08); box-shadow: 0 0 0 5px #f3c27a, 0 6px 0 var(--shadow); }
 .craft:hover .disc { transform: scale(1.05); }
 
-.course-list { display: flex; flex-direction: column; gap: 10px; width: 330px; }
+.course-list { display: flex; flex-direction: column; gap: 7px; width: 330px; }
 .course {
-  display: flex; gap: 12px; align-items: center; border: 0; text-align: left; padding: 8px 14px 8px 8px;
+  display: flex; gap: 12px; align-items: center; border: 0; text-align: left; padding: 6px 14px 6px 7px;
   background: var(--cream); border-radius: 20px; box-shadow: 0 3px 0 var(--shadow); transition: transform 0.15s;
 }
 .course:hover { transform: translateX(-4px); }
 .course.sel { box-shadow: 0 0 0 4px #f3c27a, 0 4px 0 var(--shadow); transform: translateX(-6px); }
-.course .pic { width: 92px; height: 54px; border-radius: 14px; flex: none; display: block; }
+.course .pic { width: 84px; height: 44px; border-radius: 14px; flex: none; display: block; }
 .course .nm { font-size: 17px; display: block; }
 .course .sb { font-size: 12px; color: var(--ink-soft); display: block; font-weight: 400; }
 .course .st { font-size: 13px; color: var(--red); letter-spacing: 2px; }
 
-.m-foot { display: flex; align-items: flex-end; justify-content: center; gap: 24px; pointer-events: none; }
+.m-foot { display: flex; align-items: flex-end; justify-content: flex-start; gap: 28px; pointer-events: none; padding-left: 8px; }
+.m-foot .go { order: -1; }
 .m-foot > * { pointer-events: auto; }
 .m-dialog { width: min(680px, 100%); }
 .m-dialog .dlg-box p { font-size: 18px; line-height: 1.8; }
@@ -298,7 +299,8 @@ button { font: inherit; color: inherit; cursor: pointer; }
   #menu { padding: 12px 16px 16px; }
   .m-body { flex-direction: column; align-items: center; gap: 18px; flex: none; }
   .course-list { width: min(420px, 100%); }
-  .m-foot { flex-direction: column; align-items: center; gap: 0; }
+  .m-foot { flex-direction: column; align-items: center; gap: 0; padding-left: 0; }
+  .m-foot .go { order: 1; }
   .go { margin-bottom: 0; }
   .logo h1 { font-size: 34px; }
 }
@@ -325,7 +327,8 @@ button { font: inherit; color: inherit; cursor: pointer; }
   .dlg-box p { font-size: 16px; }
   .dlg-title { font-size: 18px; padding: 8px 26px; }
   #polaroid { width: 180px; bottom: 300px; }
-  .craft-list { grid-template-columns: repeat(3, 92px); gap: 30px 12px; }
+  .craft-list { grid-template-columns: repeat(4, 80px); gap: 30px 10px; }
+  .craft .disc { width: 74px !important; height: 74px !important; }
   .craft .disc { width: 84px; height: 84px; }
   .craft .badge { top: 56px; }
   #hint { bottom: auto; top: 300px; font-size: 13px; white-space: normal; text-align: center; width: 90%; }

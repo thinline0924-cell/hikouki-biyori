@@ -165,6 +165,7 @@ function buildBalloon() {
 const BUILDERS = {
   plane: buildPlane, biplane: buildBiplane, glider: buildGlider,
   seaplane: buildSeaplane, jet: buildJet, balloon: buildBalloon,
+  car: () => buildCar(), scooter: () => buildScooter(),
 };
 export function buildAircraft(id) {
   return BUILDERS[id]();
@@ -573,5 +574,228 @@ export function trussBridge(len = 160) {
   for (let i = -2; i <= 2; i += 4) L.push(part(G.cyl(2, 2.6, 30, 6), 0x8a8478, [(i / 4) * len * 0.5, -15, 0]));
   const g = new THREE.Group();
   g.add(mesh(L));
+  return { group: g, update: null };
+}
+
+// ================= 地上ののりもの =================
+// 原点は地面。前は +z
+
+function wheel(r, w, x, y, z) {
+  const m = mesh([
+    part(G.cyl(r, r, w, 10), COL.dark, [0, 0, 0], [0, 0, PI / 2]),
+    part(G.cyl(r * 0.5, r * 0.5, w + 0.02, 8), COL.grey, [0, 0, 0], [0, 0, PI / 2]),
+    part(G.box(w + 0.04, r * 1.6, r * 0.18), 0x5a5a5a, [0, 0, 0]),
+  ]);
+  m.position.set(x, y, z);
+  return m;
+}
+
+export function buildCar(color = 0x8fcfc0, npc = false) {
+  const g = new THREE.Group();
+  const body = new THREE.Group();
+  body.add(mesh([
+    part(G.box(1.62, 0.6, 3.3), color, [0, 0.62, 0]),
+    part(G.box(1.5, 0.3, 0.5), color, [0, 0.72, 1.75], [0.35, 0, 0]),
+    part(G.box(1.5, 0.3, 0.4), color, [0, 0.72, -1.72], [-0.3, 0, 0]),
+    part(G.box(1.36, 0.08, 1.7), COL.cream, [0, 1.45, -0.25]),
+    part(G.box(1.32, 0.42, 1.62), COL.glass, [0, 1.13, -0.25]),
+    part(G.box(1.66, 0.16, 0.14), COL.grey, [0, 0.4, 1.68]),
+    part(G.box(1.66, 0.16, 0.14), COL.grey, [0, 0.4, -1.68]),
+    part(G.box(1.64, 0.06, 3.32), COL.cream, [0, 0.78, 0]),
+    part(G.cyl(0.15, 0.15, 0.06, 8), 0xfff4c8, [0.5, 0.75, 1.66], [PI / 2, 0, 0]),
+    part(G.cyl(0.15, 0.15, 0.06, 8), 0xfff4c8, [-0.5, 0.75, 1.66], [PI / 2, 0, 0]),
+    part(G.box(0.3, 0.12, 0.04), COL.red, [0.55, 0.72, -1.7]),
+    part(G.box(0.3, 0.12, 0.04), COL.red, [-0.55, 0.72, -1.7]),
+  ], undefined, !npc));
+  g.add(body);
+  const wheels = [];
+  for (const [x, z] of [[0.78, 1.1], [-0.78, 1.1], [0.78, -1.1], [-0.78, -1.1]]) {
+    const w = wheel(0.33, 0.22, x, 0.33, z);
+    g.add(w);
+    wheels.push(w);
+  }
+  return { root: g, props: [], wheels, body, wheelR: 0.33 };
+}
+
+export function buildScooter() {
+  const g = new THREE.Group();
+  const lean = new THREE.Group();
+  g.add(lean);
+  lean.add(mesh([
+    part(G.box(0.24, 0.24, 1.0), COL.red, [0, 0.45, -0.05]),
+    part(G.box(0.08, 0.75, 0.08), COL.grey, [0, 0.62, 0.55], [-0.3, 0, 0]),
+    part(G.box(0.55, 0.7, 0.1), COL.cream, [0, 0.68, 0.36], [-0.15, 0, 0]),
+    part(G.box(0.5, 0.16, 0.5), COL.red, [0, 0.3, 0.62], [0, 0, 0]),
+    part(G.box(0.34, 0.12, 0.68), 0x4a3426, [0, 0.84, -0.28]),
+    part(G.box(0.42, 0.06, 0.36), COL.grey, [0, 0.88, -0.75]),
+    part(G.box(0.72, 0.06, 0.06), COL.grey, [0, 1.08, 0.5]),
+    part(G.cyl(0.1, 0.1, 0.08, 8), 0xfff4c8, [0, 1.0, 0.62], [PI / 2, 0, 0]),
+    part(G.box(0.3, 0.3, 0.45), COL.grey, [0.1, 0.32, -0.25]),
+    // 乗っている人
+    part(G.box(0.34, 0.2, 0.55), 0x3d4b6e, [0, 0.95, -0.12]),
+    part(G.box(0.12, 0.5, 0.12), 0x3d4b6e, [0.17, 0.62, 0.1], [0.4, 0, 0]),
+    part(G.box(0.12, 0.5, 0.12), 0x3d4b6e, [-0.17, 0.62, 0.1], [0.4, 0, 0]),
+    part(G.box(0.4, 0.55, 0.26), 0xe3b54d, [0, 1.3, -0.2], [0.25, 0, 0]),
+    part(G.box(0.1, 0.45, 0.1), 0xe3b54d, [0.24, 1.25, 0.12], [-1.0, 0, 0]),
+    part(G.box(0.1, 0.45, 0.1), 0xe3b54d, [-0.24, 1.25, 0.12], [-1.0, 0, 0]),
+    part(G.sph(0.17, 8, 6), 0xf0c8a8, [0, 1.66, -0.12]),
+    part(G.sph(0.21, 8, 6), COL.red, [0, 1.72, -0.15], [0, 0, 0], [1, 0.9, 1.05]),
+    part(G.box(0.3, 0.08, 0.06), COL.glass, [0, 1.68, 0.06]),
+  ]));
+  const wheels = [wheel(0.28, 0.1, 0, 0.28, 0.62), wheel(0.28, 0.12, 0, 0.28, -0.6)];
+  wheels.forEach((w) => lean.add(w));
+  return { root: g, props: [], wheels, lean, wheelR: 0.28 };
+}
+
+// ================= 街の小物 =================
+export function ferrisWheel() {
+  const g = new THREE.Group();
+  const H = 26, R = 21;
+  const L = [];
+  for (const z of [-2.2, 2.2]) {
+    L.push(part(G.box(0.8, H + 4, 0.8), COL.cream, [-7, H / 2 - 1, z], [0, 0, -0.27]));
+    L.push(part(G.box(0.8, H + 4, 0.8), COL.cream, [7, H / 2 - 1, z], [0, 0, 0.27]));
+  }
+  L.push(part(G.box(18, 1.2, 7), 0x9a8e7c, [0, 0.6, 0]));
+  L.push(part(G.box(4, 3, 3), COL.red, [9, 1.5, 4]));
+  g.add(mesh(L));
+  const wheelG = new THREE.Group();
+  wheelG.position.set(0, H, 0);
+  const W = [];
+  for (const z of [-1.6, 1.6]) W.push(part(G.torus(R, 0.35, 4, 32), COL.cream, [0, 0, z]));
+  for (let i = 0; i < 16; i++) {
+    const a = (i / 16) * PI * 2;
+    W.push(part(G.box(0.2, R, 0.2), 0xe8dcc0, [Math.cos(a) * R / 2, Math.sin(a) * R / 2, 1.6], [0, 0, a - PI / 2]));
+    W.push(part(G.box(0.2, R, 0.2), 0xe8dcc0, [Math.cos(a) * R / 2, Math.sin(a) * R / 2, -1.6], [0, 0, a - PI / 2]));
+  }
+  W.push(part(G.cyl(1, 1, 4, 8), COL.red, [0, 0, 0], [PI / 2, 0, 0]));
+  wheelG.add(mesh(W));
+  const cars = [];
+  const cc = [COL.red, COL.yellow, COL.teal, 0xeaa0b6, COL.sky, 0xb7a0dc];
+  for (let i = 0; i < 12; i++) {
+    const cg = mesh([
+      part(G.box(2.2, 2.0, 2.4), cc[i % cc.length], [0, -1.6, 0]),
+      part(G.box(2.3, 0.3, 2.5), COL.cream, [0, -0.5, 0]),
+      part(G.box(2.24, 0.8, 2.0), COL.glass, [0, -1.3, 0]),
+      part(G.box(0.15, 0.8, 0.15), COL.grey, [0, 0, 0]),
+    ]);
+    wheelG.add(cg);
+    cars.push(cg);
+  }
+  g.add(wheelG);
+  return {
+    group: g,
+    update: (t) => {
+      wheelG.rotation.z = t * 0.06;
+      cars.forEach((c, i) => {
+        const a = (i / 12) * PI * 2 + t * 0.06;
+        c.position.set(Math.cos(a) * R, Math.sin(a) * R, 0);
+        c.rotation.z = -t * 0.06;
+      });
+    },
+  };
+}
+
+export function clockTower() {
+  const g = new THREE.Group();
+  const brick = (c) => (Math.floor(c.y / 2) % 2 ? 0xb8735a : 0xa9664f);
+  g.add(mesh([
+    part(G.box(9, 2, 9), 0x9a8e7c, [0, 1, 0]),
+    part(G.box(7, 26, 7), brick, [0, 15, 0]),
+    part(G.box(8, 7, 8), COL.cream, [0, 31.5, 0]),
+    part(G.cyl(0.1, 6.6, 8, 4), 0x5f8f7a, [0, 39, 0], [0, PI / 4, 0]),
+    part(G.box(8.6, 0.6, 8.6), COL.cream, [0, 28, 0]),
+    part(G.box(2, 3.4, 0.2), COL.glass, [0, 4, 3.55]),
+  ]));
+  const hands = [];
+  for (let k = 0; k < 4; k++) {
+    const face = new THREE.Group();
+    face.rotation.y = (k * PI) / 2;
+    const f = mesh([part(G.cyl(2.8, 2.8, 0.2, 16), 0xfbf6e4, [0, 0, 0], [PI / 2, 0, 0])], undefined, false);
+    face.add(f);
+    const hh = new THREE.Mesh(G.box(0.3, 1.6, 0.1), new THREE.MeshBasicMaterial({ color: 0x2f2a28 }));
+    const mm = new THREE.Mesh(G.box(0.2, 2.4, 0.1), new THREE.MeshBasicMaterial({ color: 0x2f2a28 }));
+    hh.geometry.translate(0, 0.8, 0);
+    mm.geometry.translate(0, 1.2, 0);
+    hh.position.z = mm.position.z = 0.16;
+    face.add(hh, mm);
+    const holder = new THREE.Group();
+    holder.position.y = 31.5;
+    holder.add(face);
+    face.position.z = 4.05;
+    holder.rotation.y = (k * PI) / 2;
+    face.rotation.y = 0;
+    g.add(holder);
+    hands.push([hh, mm]);
+  }
+  return {
+    group: g,
+    update: () => {
+      // ほんとうの時刻をさす
+      const d = new Date();
+      const m = d.getMinutes() + d.getSeconds() / 60;
+      const h = (d.getHours() % 12) + m / 60;
+      for (const [hh, mm] of hands) {
+        hh.rotation.z = -(h / 12) * PI * 2;
+        mm.rotation.z = -(m / 60) * PI * 2;
+      }
+    },
+  };
+}
+
+export function church() {
+  const g = new THREE.Group();
+  g.add(mesh([
+    part(G.box(10, 8, 18), COL.white, [0, 4, 0]),
+    part(G.prism(6.4, 18.6), 0x5a6a8a, [0, 8 + 2.56, 0], [0, PI / 2, 0], [1, 0.8, 1]),
+    part(G.box(4.6, 16, 4.6), COL.white, [0, 8, 10.5]),
+    part(G.cone(3.2, 9, 4), 0x5a6a8a, [0, 20.5, 10.5], [0, PI / 4, 0]),
+    part(G.box(0.3, 3, 0.3), COL.yellow, [0, 26.2, 10.5]),
+    part(G.box(1.6, 0.3, 0.3), COL.yellow, [0, 26.8, 10.5]),
+    part(G.box(2, 3.6, 0.2), 0x5e3c26, [0, 1.8, 12.85]),
+    part(G.cyl(1.2, 1.2, 0.2, 12), 0x8fbfd6, [0, 11.5, 12.85], [PI / 2, 0, 0]),
+  ]));
+  return { group: g, update: null };
+}
+
+export function warehouse(len = 40, seed = 1) {
+  const R = rng(seed);
+  const brick = [0xb5664c, 0xa85d45, 0xbf6f52];
+  const g = new THREE.Group();
+  const L = [
+    part(G.box(14, 9, len), () => brick[Math.floor(R() * 3)], [0, 4.5, 0]),
+    part(G.prism(8.6, len + 0.6), 0x7a7a80, [0, 9 + 3.44, 0], [0, PI / 2, 0], [1, 0.8, 1]),
+  ];
+  for (let z = -len / 2 + 5; z < len / 2; z += 7) {
+    L.push(part(G.box(0.2, 4, 3.2), 0x3a3230, [7.02, 2, z]));
+    L.push(part(G.box(0.2, 1.4, 1.6), COL.glass, [7.02, 6.8, z]));
+  }
+  g.add(mesh(L));
+  return { group: g, update: null };
+}
+
+export function harborCrane() {
+  const g = new THREE.Group();
+  const stripe = (c) => (Math.floor(c.y / 3) % 2 ? COL.red : COL.white);
+  g.add(mesh([
+    part(G.box(1, 20, 1), stripe, [-3, 10, -3]), part(G.box(1, 20, 1), stripe, [3, 10, -3]),
+    part(G.box(1, 20, 1), stripe, [-3, 10, 3]), part(G.box(1, 20, 1), stripe, [3, 10, 3]),
+    part(G.box(8, 4, 8), COL.cream, [0, 22, 0]),
+    part(G.box(1.4, 1.4, 34), COL.red, [0, 24, 12], [0.15, 0, 0]),
+    part(G.box(0.15, 14, 0.15), COL.dark, [0, 19, 27]),
+    part(G.box(2.4, 1.2, 2.4), COL.yellow, [0, 11.5, 27]),
+  ]));
+  return { group: g, update: null };
+}
+
+export function lampPost() {
+  const g = new THREE.Group();
+  g.add(mesh([
+    part(G.cyl(0.12, 0.16, 5, 6), COL.navy, [0, 2.5, 0]),
+    part(G.box(0.5, 0.6, 0.5), COL.navy, [0, 5.2, 0]),
+  ], undefined, false));
+  const l = new THREE.Mesh(G.box(0.36, 0.36, 0.36), glowMat(0xffe6a8));
+  l.position.y = 5.1;
+  g.add(l);
   return { group: g, update: null };
 }

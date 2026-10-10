@@ -1,6 +1,7 @@
 // コース(遊覧の舞台)の設定:地形の形、色、空、見どころ、ひかりの道
 import * as M from './models.js';
 import { lerp, smooth } from './util.js';
+import { buildTown, inTown, TOWN, coastZ, CHURCH } from './town.js';
 
 const bump = (x, z, cx, cz, r) => Math.exp(-((x - cx) ** 2 + (z - cz) ** 2) / (r * r));
 const ring = (x, z, a = 1900, b = 2400) => smooth(a, b, Math.hypot(x, z));
@@ -77,7 +78,7 @@ const islands = {
   ],
   thermals: [[880, 420], [-620, -260], [-1300, -900], [200, 1450], [-260, 860]],
   build(ctx) {
-    ctx.add(M.lighthouse(), 1090, 330, { exclude: 50 });
+    ctx.add(M.lighthouse(), 1090, 330, { exclude: 50, solid: 5, top: 25 });
     const arch = ctx.add(M.rockArch(32, 3), -150, -700, { y: 0, alignPath: true, exclude: 60 });
     ctx.add(M.whale(), -950, -350, { y: 0 });
     ctx.add(M.bench(), -260, 860, { exclude: 30, rot: 2.4 });
@@ -175,9 +176,11 @@ const canyon = {
     const ex = -Math.sin(ang) * L / 2, ez = Math.cos(ang) * L / 2;
     const yb = Math.min(ctx.heightAt(bx + ex, rc(bx) + ez), ctx.heightAt(bx - ex, rc(bx) - ez)) - 2;
     ctx.add(M.ropeBridge(L, 14), bx, rc(bx), { y: yb, rot: Math.PI / 2 - ang, exclude: 0 });
+    ctx.deck(bx, rc(bx), Math.cos(Math.PI / 2 - ang), -Math.sin(Math.PI / 2 - ang), L / 2, 1.7,
+      (u) => yb - 14 * (1 - (u / (L / 2)) ** 2) + 0.1, 12);
     const towers = [[XF + 620, 60, 170], [XF + 900, -90, 210], [XF + 1220, 50, 150], [XF + 1050, 140, 120]];
-    towers.forEach(([x, dz, h], i) => ctx.add(M.rockTower(h, 24, i + 1), x, rc(x) + dz, { y: -22 }));
-    ctx.add(M.cabin({ wall: 0x9a6a46, roof: M.COL.navy }), XF - 1400, rc(XF - 1400) + 230, { exclude: 40, rot: 0.6 });
+    towers.forEach(([x, dz, h], i) => ctx.add(M.rockTower(h, 24, i + 1), x, rc(x) + dz, { y: -22, solid: 22, top: h }));
+    ctx.add(M.cabin({ wall: 0x9a6a46, roof: M.COL.navy }), XF - 1400, rc(XF - 1400) + 230, { exclude: 40, rot: 0.6, solid: 6, top: 10 });
     ctx.boats([[XF + 330, rc(XF + 330) + 120]], [M.COL.red], 40);
     return [
       { id: 'falls', name: '大瀑布', x: XF + 60, z: rc(XF), r: 280,
@@ -248,7 +251,7 @@ const fjord = {
   thermals: [[400, fz(400) - 500], [-900, 500], [1300, 600], [-1300, fz(-1300) + 500], [200, fz(200) + 600]],
   build(ctx) {
     const cx = 520, cz = fz(520) + 330;
-    ctx.add(M.cabin({ wall: 0xa8603f, roof: 0x3d4b6e, lit: true }), cx, cz, { exclude: 40, rot: 2.6, smoke: true });
+    ctx.add(M.cabin({ wall: 0xa8603f, roof: 0x3d4b6e, lit: true }), cx, cz, { exclude: 40, rot: 2.6, smoke: true, solid: 6, top: 10 });
     const ice = ctx.add(M.iceArch(26), -600, fz(-600), { y: 0, alignPath: true, exclude: 30 });
     ctx.gate(ice, 'くぐった!氷のアーチ', 14, 20);
     ctx.boats([[300, fz(300)], [-1100, fz(-1100)], [1300, fz(1300)]], [M.COL.red, M.COL.yellow, M.COL.red], 70);
@@ -311,9 +314,9 @@ const aurora = {
   thermals: [],
   build(ctx) {
     const shore = ctx.findShore(0, 0, 0.75, 6);
-    ctx.add(M.cabin({ wall: 0x7a4a36, roof: 0x3a3f5c, lit: true }), shore.x, shore.z, { exclude: 40, rot: -0.7 + Math.PI, smoke: true });
-    ctx.add(M.cabin({ wall: 0x8a5a3a, roof: 0x5a3a3a, lit: true, scale: 0.8 }), shore.x + 28, shore.z + 16, { exclude: 30, rot: 2.0 });
-    ctx.add(M.observatory(), -1150, -950, { exclude: 40, rot: 0.8 });
+    ctx.add(M.cabin({ wall: 0x7a4a36, roof: 0x3a3f5c, lit: true }), shore.x, shore.z, { exclude: 40, rot: -0.7 + Math.PI, smoke: true, solid: 6, top: 10 });
+    ctx.add(M.cabin({ wall: 0x8a5a3a, roof: 0x5a3a3a, lit: true, scale: 0.8 }), shore.x + 28, shore.z + 16, { exclude: 30, rot: 2.0, solid: 5, top: 9 });
+    ctx.add(M.observatory(), -1150, -950, { exclude: 40, rot: 0.8, solid: 6, top: 12 });
     ctx.add(M.lantern(0xffc870), 300, -120, { exclude: 18 });
     ctx.add(M.pier(30), shore.x - Math.cos(0.75) * 24, shore.z - Math.sin(0.75) * 24, { y: 0, rot: -Math.PI / 2 - 0.75 });
     ctx.aurora(0, 1300);
@@ -399,13 +402,15 @@ const hills = {
     const roofs = [M.COL.red, 0x3d4b6e, 0xc9874a, 0x7a9a6a];
     for (let i = 0; i < 14; i++) {
       const a = R() * Math.PI * 2, r = 30 + R() * 110;
-      ctx.add(M.house(walls[i % 4], roofs[(i * 3) % 4], i), vx + Math.cos(a) * r, vz + Math.sin(a) * r, { rot: R() * 6, exclude: 14 });
+      ctx.add(M.house(walls[i % 4], roofs[(i * 3) % 4], i), vx + Math.cos(a) * r, vz + Math.sin(a) * r, { rot: R() * 6, exclude: 14, solid: 5, top: 10 });
     }
     [[vx - 140, vz - 40], [vx + 150, vz + 30], [vx + 20, vz + 170], [400, -300], [-700, -500], [1100, 300], [-1200, 900], [900, 1200]]
-      .forEach(([x, z], i) => ctx.add(M.windmill(i + 1), x, z, { rot: 0.4 + R() * 0.3, exclude: 20 }));
+      .forEach(([x, z], i) => ctx.add(M.windmill(i + 1), x, z, { rot: 0.4 + R() * 0.3, exclude: 20, solid: 4, top: 20 }));
     const bx = 300, slope = 0.0009 * 320 * Math.cos(bx * 0.0009 + 0.5) + 0.0023 * 120 * Math.cos(bx * 0.0023 + 2.1);
-    ctx.add(M.stoneBridge(90), bx, rz(bx), { y: -6, rot: Math.PI / 2 - Math.atan(slope), exclude: 0 });
-    ctx.add(M.bigTree(), 750, -850, { exclude: 40 });
+    const br = Math.PI / 2 - Math.atan(slope);
+    ctx.add(M.stoneBridge(90), bx, rz(bx), { y: -6, rot: br, exclude: 0 });
+    ctx.deck(bx, rz(bx), Math.cos(br), -Math.sin(br), 50, 4, () => -6 + 90 * 0.45 / 2 * 0.95 - 0.8 + 0.6, 45);
+    ctx.add(M.bigTree(), 750, -850, { exclude: 40, solid: 3, top: 35 });
     ctx.floaters([[0xe3778d, 0xf6f1e4], [0xf0d36a, 0x6aa0c8], [0x7fae5c, 0xf4eee0], [0xc65a43, 0xf0d36a]]);
     ctx.boats([[-1000, rz(-1000) + 80]], [M.COL.yellow], 30);
     return [
@@ -421,5 +426,60 @@ const hills = {
   },
 };
 
-export const COURSES = [islands, canyon, fjord, aurora, hills];
+
+// ---------------------------------------------------------------------------
+// 6. 港町と時計台(地上ののりもので走れる街)
+// ---------------------------------------------------------------------------
+const town = {
+  id: 'town',
+  name: '港町と時計台',
+  en: 'Harbor Town',
+  sub: '碁盤の目の街と、海辺の観覧車',
+  intro: '坂と港のある、ちいさな街。\n空からながめても、車や原付で走ってもいい。',
+  seed: 83,
+  sky: {
+    top: 0x82b6e2, horizon: 0xf7e8cf, bottom: 0xe8dcc0, sun: 0xfff1d6, sunDir: [0.35, 0.5, 0.8], sunI: 2.1, sunSize: 1,
+    hemiSky: 0xeaf2f8, hemiGround: 0x8a7a62, hemiI: 1.2, fog: 0xf0e8d6, fogNear: 400, fogFar: 2800,
+    water: 0x5a98b4, waterSpec: 0xffffff, cloud: 0xffffff, cloudTint: 0xf2e6da, clouds: 26, cloudY: [380, 640],
+  },
+  particles: null,
+  windBase: 1.2,
+  spawn: { x: 0, z: 950, dir: [0, -1] },
+  groundSpawn: { x: -60, z: 100, dir: [1, 0] },
+  height(N) {
+    return (x, z) => {
+      let h = 8 + Math.max(0, -260 - z) * 0.22 + N.fbm(x * 0.001, z * 0.001, 4) * 140 * smooth(-250, -700, z);
+      h += smooth(720, 1200, Math.abs(x)) * (140 + N.fbm(x * 0.002, z * 0.002, 3) * 90);
+      h += 60 * bump(x, z, CHURCH.x, CHURCH.z, 230);
+      h += N.fbm(x * 0.01, z * 0.01, 2) * 4;
+      const dX = Math.max(0, Math.abs(x) - 660), dZ = Math.max(0, TOWN.z0 - z, z - TOWN.z1);
+      h = lerp(h, TOWN.y, 1 - smooth(0, 90, Math.hypot(dX, dZ)));
+      h = lerp(h, -24, smooth(coastZ(x) - 10, coastZ(x) + 90, z));
+      return h + ring(x, z) * 300;
+    };
+  },
+  color(h, ny, x, z, N) {
+    if (h < 0) return underwater(h, 0xd8c8a0, 0x2f6f88);
+    if (h < 5) return 0xe2d2a6;
+    if (inTown(x, z, -4)) return mix(0xcfc6b2, 0xbdb5a2, N.n2(x * 0.03, z * 0.03) * 0.5 + 0.5);
+    if (ny < 0.72) return 0x9a8e7c;
+    return mix(0x90b866, 0x7aa258, N.n2(x * 0.01, z * 0.01) * 0.5 + 0.5);
+  },
+  trees: [
+    { kind: 'round', count: 1300, ok: (h, ny, c) => h > 4 && ny > 0.82 && !inTown(c.x, c.z, 40) },
+    { kind: 'pine', count: 700, ok: (h, ny, c) => h > 120 && ny > 0.82 && !inTown(c.x, c.z, 40) },
+    { kind: 'blossom', count: 300, ok: (h, ny, c) => h > 10 && h < 150 && ny > 0.86 && !inTown(c.x, c.z, 40) },
+  ],
+  path: [
+    [0, 950, 60], [0, 600, 45], [420, 505, 55], [600, 150, 70], [50, 150, 60], [-300, 300, 50],
+    [-320, 505, 35], [-650, 200, 80], [-450, -560, 60], [0, -700, 150], [700, -400, 120], [900, 500, 90],
+  ],
+  groundPath: [[-100, 100], [500, 100], [500, 470], [-500, 470], [-500, -200], [-100, -200]],
+  thermals: [[-450, -560], [800, -500], [-900, -300], [1000, 300]],
+  build(ctx) {
+    return buildTown(ctx);
+  },
+};
+
+export const COURSES = [islands, canyon, fjord, aurora, hills, town];
 export { shade, mix };
