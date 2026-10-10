@@ -1,0 +1,8 @@
+# Render Blueprint(設計図):このゲームを「静的サイト」として公開する
+# サーバーのプログラムは動かさないので無料で使え、APIキーなどの設定も要りません
+services:
+  - type: web
+    name: hikouki-biyori
+    runtime: static
+    buildCommand: echo "no build needed"
+    staticPublishPath: .

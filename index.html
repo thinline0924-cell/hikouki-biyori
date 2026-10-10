@@ -1,0 +1,227 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
+  <title>ひこうき日和</title>
+  <meta name="description" content="いろいろな飛行機で、自然の中をのんびり遊覧するローポリ3Dゲーム">
+  <meta name="theme-color" content="#8f8b5a">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Klee+One:wght@400;600&family=Patrick+Hand&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="style.css">
+  <script type="importmap">
+  {
+    "imports": {
+      "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.js"
+    }
+  }
+  </script>
+</head>
+<body>
+  <div id="view"></div>
+  <div id="cloudfog"></div>
+  <div id="grain"></div>
+  <div id="vignette"></div>
+  <div id="flash"></div>
+
+  <!-- 飛んでいるときの表示 -->
+  <div id="hud" class="hidden">
+    <div class="keys">
+      <button class="key" data-act="photo" title="写真をとる(Z)">
+        <span class="cap">Z</span>
+        <svg viewBox="0 0 64 64"><rect x="12" y="22" width="40" height="28" rx="6" fill="#9fb6c4" stroke="#3a3f5c" stroke-width="3"/><rect x="22" y="16" width="14" height="8" rx="2" fill="#3a3f5c"/><circle cx="32" cy="36" r="9" fill="#f5edd3" stroke="#3a3f5c" stroke-width="3"/><circle cx="32" cy="36" r="3.5" fill="#3a3f5c"/><circle cx="45" cy="28" r="2.5" fill="#c25b45"/></svg>
+        <span class="badge" id="photoBadge">0</span>
+        <span class="lbl">写真</span>
+      </button>
+      <button class="key" data-act="map" title="地図(X)">
+        <span class="cap">X</span>
+        <svg viewBox="0 0 64 64"><path d="M12 18 L25 13 L39 18 L52 13 L52 47 L39 52 L25 47 L12 52 Z" fill="#e9d9a8" stroke="#3a3f5c" stroke-width="3" stroke-linejoin="round"/><path d="M25 13 V47 M39 18 V52" stroke="#3a3f5c" stroke-width="2.5"/><path d="M17 38 q6 -8 12 -2 t 14 -6" fill="none" stroke="#6fa6c2" stroke-width="3" stroke-linecap="round"/><path d="M42 26 l4 4 m0 -4 l-4 4" stroke="#c25b45" stroke-width="3" stroke-linecap="round"/></svg>
+        <span class="lbl">地図</span>
+      </button>
+      <button class="key" data-act="view" title="視点をかえる(C)">
+        <span class="cap">C</span>
+        <svg viewBox="0 0 64 64"><path d="M8 33 Q32 10 56 33 Q32 54 8 33 Z" fill="#f5edd3" stroke="#3a3f5c" stroke-width="3" stroke-linejoin="round"/><circle cx="32" cy="33" r="9" fill="#8fbfd6" stroke="#3a3f5c" stroke-width="3"/><circle cx="32" cy="33" r="3.5" fill="#3a3f5c"/></svg>
+        <span class="badge note" id="viewBadge">1</span>
+        <span class="lbl" id="viewLbl">うしろ</span>
+      </button>
+      <button class="key wide" data-act="boost" title="加速(Shift)">
+        <span class="pill">Shift</span>
+        <svg viewBox="0 0 64 64" id="boostIcon"><path d="M14 40 L30 24 L30 34 L48 22 L40 44 L36 36 Z" fill="#c25b45" stroke="#3a3f5c" stroke-width="3" stroke-linejoin="round"/><path d="M10 50 q10 -4 20 0 t 22 0" fill="none" stroke="#3a3f5c" stroke-width="3" stroke-linecap="round"/></svg>
+        <span class="lbl" id="boostLbl">加速</span>
+      </button>
+      <button class="key wide" data-act="auto" title="おまかせ飛行(V)">
+        <span class="pill">V</span>
+        <svg viewBox="0 0 64 64"><path d="M14 46 C 20 26, 36 14, 52 12 C 48 28, 36 42, 18 48 Z" fill="#f5edd3" stroke="#3a3f5c" stroke-width="3" stroke-linejoin="round"/><path d="M18 46 L 44 20" stroke="#3a3f5c" stroke-width="2.5"/><path d="M8 54 l10 -8" stroke="#3a3f5c" stroke-width="3" stroke-linecap="round"/></svg>
+        <span class="lbl">おまかせ</span>
+      </button>
+    </div>
+
+    <div class="status">
+      <div class="chip" id="spotChip"><span class="ico">✿</span><span id="spotTxt">0/4</span></div>
+      <div class="chip" id="moteChip"><span class="ico mote">◆</span><span id="moteTxt">0</span><span class="chain" id="chainTxt"></span></div>
+      <button class="chip btn" id="pauseBtn" title="一時停止(Esc)">❚❚</button>
+    </div>
+
+    <div id="mapWrap" class="hidden"><canvas id="minimap" width="220" height="220"></canvas><span class="n">N</span></div>
+
+    <div class="gauges" id="gauges">
+      <div class="g"><span class="k">高さ</span><span class="v" id="gAlt">0</span><span class="u">m</span></div>
+      <div class="g"><span class="k">速さ</span><span class="v" id="gSpd">0</span><span class="u">km/h</span></div>
+      <canvas id="compass" width="84" height="84"></canvas>
+      <div class="g extra" id="gExtra"></div>
+    </div>
+    <div id="autoTag" class="hidden">おまかせ飛行中 — V でもどる</div>
+    <div id="toasts"></div>
+    <div id="hint"></div>
+  </div>
+
+  <!-- 会話ウィンドウ(説明や見どころ) -->
+  <div id="dialog" class="hidden">
+    <div class="dlg-title" id="dlgTitle">見どころ</div>
+    <div class="dlg-box">
+      <svg class="wavy" viewBox="0 0 1000 260" preserveAspectRatio="none"><path d="M22,26 C140,8 250,40 360,20 S590,8 700,26 S900,10 980,28 C996,90 984,170 990,232 C880,252 760,232 640,246 S400,254 300,238 S90,252 16,234 C6,170 14,90 22,26 Z"/></svg>
+      <svg class="squig l" viewBox="0 0 20 120"><path d="M10 4 q8 10 0 20 t0 20 t0 20 t0 20 t0 20"/></svg>
+      <svg class="squig r" viewBox="0 0 20 120"><path d="M10 4 q8 10 0 20 t0 20 t0 20 t0 20 t0 20"/></svg>
+      <p id="dlgText"></p>
+      <span class="space">Space</span>
+    </div>
+  </div>
+
+  <!-- さわって操作(スマホ) -->
+  <div id="touch" class="hidden">
+    <div id="stick"><div id="knob"></div></div>
+    <div class="tbtns">
+      <button data-act="boost" id="tBoost">加速</button>
+      <button data-act="photo">写真</button>
+      <button data-act="view">視点</button>
+      <button data-act="map">地図</button>
+      <button data-act="auto">おまかせ</button>
+    </div>
+  </div>
+
+  <!-- 写真のプレビュー -->
+  <div id="polaroid" class="hidden"><img alt=""><span></span></div>
+
+  <!-- メニュー -->
+  <div id="menu" class="hidden">
+    <header class="m-head">
+      <div class="logo">
+        <svg viewBox="0 0 120 60" class="logo-plane"><path d="M8 34 Q40 26 70 30 L96 22 Q104 21 104 27 L86 36 Q60 44 20 42 Z" fill="#f5edd3" stroke="#3a3f5c" stroke-width="3" stroke-linejoin="round"/><path d="M40 31 L56 12 L64 12 L58 32" fill="#c25b45" stroke="#3a3f5c" stroke-width="3" stroke-linejoin="round"/><path d="M14 40 L6 28 L14 28 L22 36" fill="#c25b45" stroke="#3a3f5c" stroke-width="3" stroke-linejoin="round"/><path d="M104 50 q-12 6 -24 0 t-24 0" fill="none" stroke="#f5edd3" stroke-width="3" stroke-linecap="round" stroke-dasharray="2 7"/></svg>
+        <div>
+          <h1>ひこうき日和</h1>
+          <p class="sub">のんびり、空の遊覧へ。<span class="ver">ver 2026.10.10</span></p>
+        </div>
+      </div>
+      <nav class="m-nav">
+        <button id="btnAlbum">アルバム</button>
+        <button id="btnJournal">旅のしおり</button>
+        <button id="btnHelp">あそびかた</button>
+        <button id="btnSound" class="snd">♪ 音楽</button>
+      </nav>
+    </header>
+    <div class="m-body">
+      <section class="m-sec crafts">
+        <h2><span>1</span>機体をえらぶ</h2>
+        <div id="craftList" class="craft-list"></div>
+      </section>
+      <section class="m-sec courses">
+        <h2><span>2</span>コースをえらぶ</h2>
+        <div id="courseList" class="course-list"></div>
+      </section>
+    </div>
+    <div class="m-foot">
+      <div class="m-dialog">
+        <div class="dlg-title" id="mTitle">ひばり号</div>
+        <div class="dlg-box">
+          <svg class="wavy" viewBox="0 0 1000 260" preserveAspectRatio="none"><path d="M22,26 C140,8 250,40 360,20 S590,8 700,26 S900,10 980,28 C996,90 984,170 990,232 C880,252 760,232 640,246 S400,254 300,238 S90,252 16,234 C6,170 14,90 22,26 Z"/></svg>
+          <svg class="squig l" viewBox="0 0 20 120"><path d="M10 4 q8 10 0 20 t0 20 t0 20 t0 20 t0 20"/></svg>
+          <svg class="squig r" viewBox="0 0 20 120"><path d="M10 4 q8 10 0 20 t0 20 t0 20 t0 20 t0 20"/></svg>
+          <p id="mText"></p>
+          <div id="mStats" class="stats"></div>
+        </div>
+      </div>
+      <button id="btnGo" class="go">出発する<small>Enter</small></button>
+    </div>
+  </div>
+
+  <!-- 一時停止 -->
+  <div id="pause" class="overlay hidden">
+    <div class="card small">
+      <h2>ひとやすみ</h2>
+      <button data-p="resume" class="big">つづける</button>
+      <button data-p="journal">旅のしおり</button>
+      <button data-p="album">アルバム</button>
+      <button data-p="help">あそびかた</button>
+      <button data-p="sound" id="pSound">音楽:オン</button>
+      <button data-p="menu">機体・コースをえらびなおす</button>
+    </div>
+  </div>
+
+  <!-- アルバム -->
+  <div id="album" class="overlay hidden">
+    <div class="card wide">
+      <button class="close" data-close>×</button>
+      <h2>アルバム</h2>
+      <p class="note" id="albumNote"></p>
+      <div id="albumGrid" class="album-grid"></div>
+    </div>
+  </div>
+  <div id="photoView" class="overlay hidden">
+    <div class="photo-big">
+      <img id="photoImg" alt="">
+      <p id="photoCap"></p>
+      <div class="row"><a id="photoSave" download="hikouki.jpg" class="btn">保存する</a><button id="photoDel" class="btn ghost">消す</button><button data-close class="btn ghost">とじる</button></div>
+    </div>
+  </div>
+
+  <!-- 旅のしおり -->
+  <div id="journal" class="overlay hidden">
+    <div class="card wide">
+      <button class="close" data-close>×</button>
+      <h2>旅のしおり</h2>
+      <div id="journalBody"></div>
+    </div>
+  </div>
+
+  <!-- あそびかた -->
+  <div id="help" class="overlay hidden">
+    <div class="card">
+      <button class="close" data-close>×</button>
+      <h2>あそびかた</h2>
+      <div class="help">
+        <p>すきな機体で、コースをのんびり遊覧しましょう。ぶつかっても落ちません。</p>
+        <table>
+          <tr><th>↑ ↓ / W S</th><td>機首を上げる・下げる(気球はバーナー・弁)</td></tr>
+          <tr><th>← → / A D</th><td>かたむけて曲がる(手をはなすと水平にもどる)</td></tr>
+          <tr><th>Q E</th><td>少しだけ向きをかえる</td></tr>
+          <tr><th>Shift</th><td>加速(気球はバーナー)</td></tr>
+          <tr><th>Z</th><td>写真をとる(アルバムに入ります)</td></tr>
+          <tr><th>X</th><td>地図を出す・しまう</td></tr>
+          <tr><th>C</th><td>視点をかえる(うしろ/遠く/操縦席)</td></tr>
+          <tr><th>V</th><td>おまかせ飛行(ひかりの道を自動で飛ぶ)</td></tr>
+          <tr><th>Space</th><td>ウィンドウをとじる</td></tr>
+          <tr><th>Esc</th><td>ひとやすみ</td></tr>
+          <tr><th>マウスでドラッグ</th><td>まわりを見まわす</td></tr>
+        </table>
+        <p><b>ひかりの粒</b>:ならんだ粒を続けて集めると、音がメロディになります。</p>
+        <p><b>見どころ</b>:近くを飛ぶと、旅のしおりにスタンプがおされます。</p>
+        <p><b>水上飛行機</b>:水の上で Shift で加速 → ↑ で離水。ゆっくり水面におりると着水できます。</p>
+        <p><b>グライダー</b>:白い粒がのぼっている所(上昇気流)の中をくるくる回ると上がれます。</p>
+        <p><b>熱気球</b>:高さによって風の向きがかわります。右下の矢印を見て、行きたい方向の風をさがしましょう。</p>
+        <p class="note">スマホでは、左下のスティックと右のボタンで操作できます。</p>
+      </div>
+    </div>
+  </div>
+
+  <!-- 起動中 -->
+  <div id="boot" class="overlay solid">
+    <div class="boot-box">
+      <h1>ひこうき日和</h1>
+      <p id="bootText">空の準備をしています…</p>
+    </div>
+  </div>
+
+  <script type="module" src="js/main.js"></script>
+</body>
+</html>
