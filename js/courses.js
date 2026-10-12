@@ -2,6 +2,8 @@
 import * as M from './models.js';
 import { lerp, smooth } from './util.js';
 import { buildTown, inTown, TOWN, coastZ, CHURCH } from './town.js';
+import { buildVillage, buildCabins } from './village.js';
+import { buildRailway } from './rail.js';
 
 const bump = (x, z, cx, cz, r) => Math.exp(-((x - cx) ** 2 + (z - cz) ** 2) / (r * r));
 const ring = (x, z, a = 1900, b = 2400) => smooth(a, b, Math.hypot(x, z));
@@ -33,6 +35,7 @@ const ISLANDS = [
 ];
 const islands = {
   id: 'islands',
+  horizon: { min: 0, max: 260, gaps: 110, color: 0x6f8f5a },
   strip: { x: -620, z: -260, ang: 0, len: 520 }, // 滑走路(x, z は真ん中、ang は向き)
   name: '夕凪の群島',
   en: 'Sunset Archipelago',
@@ -84,6 +87,10 @@ const islands = {
     ctx.add(M.whale(), -950, -350, { y: 0 });
     ctx.add(M.bench(), -260, 860, { exclude: 30, rot: 2.4 });
     ctx.boats([[300, -300], [-700, 200], [1200, 800], [-400, -1300]], [M.COL.red, M.COL.navy, M.COL.teal, M.COL.yellow]);
+    // 漁師町
+    buildVillage(ctx, { x: 200, z: 1430, r: 150, n: 16, style: 'fishing', water: 4, seed: 21 });
+    buildVillage(ctx, { x: -1300, z: -900, r: 130, n: 10, style: 'fishing', water: 3, seed: 22 });
+    buildVillage(ctx, { x: 880, z: 420, r: 160, n: 8, style: 'fishing', water: 2, seed: 23, avoid: (x, z) => Math.hypot(x - 1090, z - 330) < 60 });
     ctx.gate(arch, 'くぐった!岩のアーチ', 18, 26);
     return [
       { id: 'lighthouse', name: '白い灯台', x: 1090, z: 330, r: 230,
@@ -105,6 +112,7 @@ const XF = -350;
 const rc = (x) => 260 * Math.sin(x * 0.0011 + 0.4) + 110 * Math.sin(x * 0.0029 + 1.3);
 const canyon = {
   id: 'canyon',
+  horizon: { min: 120, max: 520, mesa: true, color: 0xb57852 },
   strip: { x: 200, z: -700, ang: Math.PI / 2, len: 600 }, // 滑走路(x, z は真ん中、ang は向き)
   name: '大瀑布の渓谷',
   en: 'Great Falls Canyon',
@@ -184,6 +192,9 @@ const canyon = {
     towers.forEach(([x, dz, h], i) => ctx.add(M.rockTower(h, 24, i + 1), x, rc(x) + dz, { y: -22, solid: 22, top: h }));
     ctx.add(M.cabin({ wall: 0x9a6a46, roof: M.COL.navy }), XF - 1400, rc(XF - 1400) + 230, { exclude: 40, rot: 0.6, solid: 6, top: 10 });
     ctx.boats([[XF + 330, rc(XF + 330) + 120]], [M.COL.red], 40);
+    // 台地の上の牧場の村
+    buildVillage(ctx, { x: -650, z: -950, r: 140, n: 12, style: 'adobe', seed: 31 });
+    buildVillage(ctx, { x: -1500, z: 800, r: 120, n: 8, style: 'adobe', seed: 32, farm: true });
     return [
       { id: 'falls', name: '大瀑布', x: XF + 60, z: rc(XF), r: 280,
         desc: '台地のはしから、川がいっきに落ちていく。\nごうごうという音が、胸にひびく。' },
@@ -203,6 +214,7 @@ const canyon = {
 const fz = (x) => 380 * Math.sin(x * 0.0008 + 0.2) + 160 * Math.sin(x * 0.0021 + 2);
 const fjord = {
   id: 'fjord',
+  horizon: { min: 300, max: 1300, snow: 650, color: 0x7d8494 },
   strip: { x: 300, z: -700, ang: Math.PI / 2, len: 560 }, // 滑走路(x, z は真ん中、ang は向き)
   name: '雪嶺の峡湾',
   en: 'Snowpeak Fjord',
@@ -217,7 +229,8 @@ const fjord = {
   particles: 'snow',
   windBase: 2.2,
   spawn: { x: 0, z: fz(0), dir: [1, 0.3] },
-  flats: [[520, fz(520) + 330, 70]],
+  // 平らな所:山小屋、入り江の村2つ(高さ 8m の岸辺のたな)
+  flats: [[520, fz(520) + 330, 70], [-150, fz(-150) + 215, 125, 8], [950, fz(950) + 215, 115, 8]],
   height(N) {
     return (x, z) => {
       const r = N.ridged(x * 0.0006 + 5, z * 0.0006 - 3, 5);
@@ -259,6 +272,9 @@ const fjord = {
     ctx.gate(ice, 'くぐった!氷のアーチ', 14, 20);
     ctx.boats([[300, fz(300)], [-1100, fz(-1100)], [1300, fz(1300)]], [M.COL.red, M.COL.yellow, M.COL.red], 70);
     ctx.add(M.pier(34), 40, fz(40) + 300, { y: 0, rot: Math.PI });
+    // 入り江の村(赤い木の家と、水ぎわの舟小屋)
+    buildVillage(ctx, { x: -150, z: fz(-150) + 220, r: 62, n: 11, style: 'nordic', water: 4, seed: 41 });
+    buildVillage(ctx, { x: 950, z: fz(950) + 220, r: 56, n: 9, style: 'nordic', water: 3, seed: 42 });
     return [
       { id: 'glacier', name: '青い氷河', x: -950, z: 820, r: 330,
         desc: '何千年もかけて、ゆっくり流れてきた氷。\n割れ目の奥は、海よりも青い。' },
@@ -277,6 +293,8 @@ const fjord = {
 // ---------------------------------------------------------------------------
 const aurora = {
   id: 'aurora',
+  horizon: { min: 120, max: 520, snow: 300, color: 0x2d3f55 },
+  tufts: false,
   strip: { x: 900, z: -700, ang: Math.PI / 2, len: 560 }, // 滑走路(x, z は真ん中、ang は向き)
   name: 'オーロラの湖',
   en: 'Aurora Lake',
@@ -324,6 +342,9 @@ const aurora = {
     ctx.add(M.lantern(0xffc870), 300, -120, { exclude: 18 });
     ctx.add(M.pier(30), shore.x - Math.cos(0.75) * 24, shore.z - Math.sin(0.75) * 24, { y: 0, rot: -Math.PI / 2 - 0.75 });
     ctx.aurora(0, 1300);
+    // 湖畔の小さな村と、たき火
+    buildCabins(ctx, { x: shore.x + Math.cos(0.75) * 70, z: shore.z + Math.sin(0.75) * 70, r: 110, n: 9, seed: 51 });
+    buildCabins(ctx, { x: -900, z: 300, r: 100, n: 6, seed: 52 });
     return [
       { id: 'cabin', name: '湖畔の小屋', x: shore.x, z: shore.z, r: 220,
         desc: '窓にともる、オレンジ色のあかり。\nだれかがココアをいれて、空を見あげている。' },
@@ -343,7 +364,7 @@ const aurora = {
 const rz = (x) => 320 * Math.sin(x * 0.0009 + 0.5) + 120 * Math.sin(x * 0.0023 + 2.1);
 const FLOWERS = [0xeaa0b6, 0xf0d36a, 0xb7a0dc, 0xf6f1e4, 0xeca463, 0x9cc069, 0xe3778d];
 function flowerAt(x, z, h, ny, N) {
-  const near = Math.hypot(x - 550, z - 300) < 380;
+  const near = Math.hypot(x - 600, z - 470) < 380;
   const field = N.n2(x / 240 + 3, z / 240 - 1) + (near ? 0.8 : 0);
   if (field > 0.3 && ny > 0.86 && h > 3 && h < 230) {
     const fx = Math.floor(x / 240), fzz = Math.floor(z / 240);
@@ -357,6 +378,7 @@ function flowerAt(x, z, h, ny, N) {
 const hills = {
   isFlower: (x, z, h, ny, N) => flowerAt(x, z, h, ny, N) >= 0,
   id: 'hills',
+  horizon: { min: 80, max: 380, color: 0x7fae5c },
   strip: { x: -500, z: -700, ang: Math.PI / 2, len: 560 }, // 滑走路(x, z は真ん中、ang は向き)
   name: '花と風車の丘',
   en: 'Windmill Hills',
@@ -376,7 +398,9 @@ const hills = {
     return (x, z) => {
       let h = 70 + N.fbm(x * 0.0006, z * 0.0006, 4) * 190 + N.fbm(x * 0.003, z * 0.003, 2) * 14;
       const d = Math.abs(z - rz(x));
-      h = lerp(h, -10, 1 - smooth(35, 150, d));
+      // 川:水の通り道と、なだらかな谷の斜面(がけにしない)
+      h = Math.min(h, -10 + Math.max(0, d - 42) * 0.55);
+      h = lerp(h, -10, 1 - smooth(30, 60, d));
       h = lerp(h, Math.min(h, -14), 1 - smooth(200, 330, Math.hypot(x + 1000, z - rz(-1000))));
       h = Math.max(h, 300 * bump(x, z, 750, -850, 360) - 60);
       return h + ring(x, z) * 300;
@@ -396,7 +420,7 @@ const hills = {
     { kind: 'bush', count: 600, ok: (h, ny, c) => h > 3 && ny > 0.8 && !c.flower },
   ],
   path: [
-    [-1000, rz(-1000), 35], [-500, rz(-500), 30], [-150, 650, 70], [300, rz(300), 18], [550, 300, 45],
+    [-1000, rz(-1000), 35], [-500, rz(-500), 30], [-150, 650, 70], [300, rz(300), 18], [600, 470, 45],
     [750, -850, 300], [1300, rz(1300), 60], [1000, 900, 120], [200, 1300, 110], [-800, 1000, 100], [-1500, rz(-1500) - 300, 80],
   ],
   thermals: [[750, -850], [-600, -700], [600, 800], [-900, 600], [1200, -200]],
@@ -417,11 +441,17 @@ const hills = {
     ctx.deck(bx, rz(bx), Math.cos(br), -Math.sin(br), 50, 4, () => -6 + 90 * 0.45 / 2 * 0.95 - 0.8 + 0.6, 45);
     ctx.add(M.bigTree(), 750, -850, { exclude: 40, solid: 3, top: 35 });
     ctx.floaters([[0xe3778d, 0xf6f1e4], [0xf0d36a, 0x6aa0c8], [0x7fae5c, 0xf4eee0], [0xc65a43, 0xf0d36a]]);
+    // 農家(家・赤い納屋・サイロ・干し草)
+    [[-1150, -150], [1150, -350], [450, 950], [-700, 1050], [1350, 650]].forEach(([x, z], i) =>
+      buildVillage(ctx, { x, z, r: 45, n: 4, style: 'farm', farm: true, seed: 60 + i }));
+    // ひとまわりする鉄道と、村の駅
+    buildRailway(ctx, [[-1550, -650], [-700, -1200], [300, -1350], [1300, -900], [1600, 100], [1150, 1050],
+      [200, 1250], [-450, 1000], [-1050, 1150], [-1650, 350]], { station: [-300, 900] });
     ctx.boats([[-1000, rz(-1000) + 80]], [M.COL.yellow], 30);
     return [
       { id: 'village', name: '風車の村', x: vx, z: vz, r: 260,
         desc: 'パンを焼くにおいと、風車のきしむ音。\n村の人たちが、空にむかって手をふっている。' },
-      { id: 'field', name: '花畑の海', x: 550, z: 300, r: 300, maxY: 180,
+      { id: 'field', name: '花畑の海', x: 600, z: 470, r: 300, maxY: 220,
         desc: '見わたすかぎり、色とりどりの花のしま。\n低く飛ぶと、あまい香りがする…気がする。' },
       { id: 'sbridge', name: '石の橋', x: bx, z: rz(bx), r: 200,
         desc: '何百年もまえからある、まるい石の橋。\nアーチの下を、小舟がくぐっていく。' },
@@ -437,6 +467,8 @@ const hills = {
 // ---------------------------------------------------------------------------
 const town = {
   id: 'town',
+  horizon: { min: 120, max: 560, color: 0x6f9a60 },
+  noScatter: (x, z) => inTown(x, z, 30),
   strip: { x: 0, z: -1000, ang: Math.PI / 2, len: 560 }, // 滑走路(x, z は真ん中、ang は向き)
   name: '港町と時計台',
   en: 'Harbor Town',
@@ -467,7 +499,7 @@ const town = {
   color(h, ny, x, z, N) {
     if (h < 0) return underwater(h, 0xd8c8a0, 0x2f6f88);
     if (h < 5) return 0xe2d2a6;
-    if (inTown(x, z, -4)) return mix(0xcfc6b2, 0xbdb5a2, N.n2(x * 0.03, z * 0.03) * 0.5 + 0.5);
+    if (inTown(x, z, 60) && Math.abs(h - TOWN.y) < 0.4 && ny > 0.995) return mix(0xcfc6b2, 0xbdb5a2, N.n2(x * 0.03, z * 0.03) * 0.5 + 0.5);
     if (ny < 0.72) return 0x9a8e7c;
     return mix(0x90b866, 0x7aa258, N.n2(x * 0.01, z * 0.01) * 0.5 + 0.5);
   },

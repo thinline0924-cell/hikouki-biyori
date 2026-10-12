@@ -55,7 +55,9 @@ function loadCourse(course) {
     G.world.dispose();
   }
   G.course = course;
+  const t0 = performance.now();
   G.world = buildWorld(course, quality);
+  G.buildMs = Math.round(performance.now() - t0); // 動作確認用:作るのにかかった時間
   scene.add(G.world.group);
   scene.fog = G.world.fog;
   scene.background = new THREE.Color(course.sky.fog);
@@ -819,15 +821,20 @@ function drawMap() {
   g.drawImage(m.canvas, 0, 0, S2, S2);
   // 道
   if (w.roads.length) {
-    g.strokeStyle = 'rgba(110,108,114,0.85)';
-    g.lineWidth = 1.6;
-    g.beginPath();
-    for (const [x1, z1, x2, z2] of w.roads) {
-      const a = toPx(x1, z1), b = toPx(x2, z2);
-      g.moveTo(a[0], a[1]);
-      g.lineTo(b[0], b[1]);
+    for (const kind of ['road', 'rail']) {
+      g.strokeStyle = kind === 'rail' ? 'rgba(90,60,40,0.9)' : 'rgba(110,108,114,0.85)';
+      g.lineWidth = kind === 'rail' ? 2 : 1.6;
+      g.setLineDash(kind === 'rail' ? [4, 2] : []);
+      g.beginPath();
+      for (const [x1, z1, x2, z2, k] of w.roads) {
+        if ((k || 'road') !== kind) continue;
+        const a = toPx(x1, z1), b = toPx(x2, z2);
+        g.moveTo(a[0], a[1]);
+        g.lineTo(b[0], b[1]);
+      }
+      g.stroke();
     }
-    g.stroke();
+    g.setLineDash([]);
   }
   // 滑走路
   if (w.runway) {
@@ -1275,12 +1282,14 @@ const _spotCache = {};
 function spotNames(course) {
   if (_spotCache[course.id]) return _spotCache[course.id];
   const f = makeHeightField(course);
-  const stub = {
-    R: Math.random, N: f.N, heightAt: f.heightAt, surfaceAt: (x, z) => ({ y: Math.max(0, f.heightAt(x, z)), water: f.heightAt(x, z) < 0 }),
-    add: (o) => o, gate() {}, boats() {}, mist() {}, aurora() {}, floaters() {},
-    addMesh() {}, updater() {}, solid() {}, road() {}, deck() {},
-    findShore: () => ({ x: 0, z: 0 }),
+  const base = {
+    R: Math.random, N: f.N, heightAt: f.heightAt, normalYAt: f.normalYAt,
+    surfaceAt: (x, z) => ({ y: Math.max(0, f.heightAt(x, z)), water: f.heightAt(x, z) < 0 }),
+    add: (o) => o, findShore: () => ({ x: 0, z: 0 }), waterEdge: () => null,
   };
+  // 知らない道具は「何もしない」ことにする(名前を知りたいだけなので)
+  const stub = new Proxy(base, { get: (t, k) => (k in t ? t[k] : () => null) });
+
   _spotCache[course.id] = course.build(stub).map((s) => ({ id: s.id, name: s.name }));
   return _spotCache[course.id];
 }
@@ -1316,6 +1325,14 @@ function frame(now) {
     G.t += dt;
     step(dt);
     if (G.mode === 'play') updateHud(dt);
+  }
+  // 動作確認用:カメラの位置を外から決める
+  if (window.__shotCam) {
+    const c = window.__shotCam;
+    camera.position.set(c[0], c[1], c[2]);
+    camera.up.set(0, 1, 0);
+    camera.lookAt(c[3], c[4], c[5]);
+    G.world.update(G.t, 0, camera, G.flyer.pos);
   }
   if (fpActive()) {
     // 景色を描いてから、奥行きを消して操縦席を重ねる

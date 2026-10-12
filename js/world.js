@@ -43,12 +43,13 @@ function petalTexture() {
 }
 
 // 地形の高さ表だけを作る(画面がなくても使える:メニューの絵やテストで使う)
-export function makeHeightField(course) {
+export function makeHeightField(course, seg = SEG) {
+  const CELL = SIZE / seg;
   const N = makeNoise(course.seed);
   const base = course.height(N);
   let hf = base;
   if (course.flats) {
-    const fl = course.flats.map(([x, z, r]) => [x, z, r, base(x, z)]);
+    const fl = course.flats.map(([x, z, r, t]) => [x, z, r, t !== undefined ? t : base(x, z)]);
     hf = (x, z) => {
       let h = base(x, z);
       for (const [cx, cz, r, hc] of fl) h = lerp(h, hc, 1 - smooth(r * 0.55, r, Math.hypot(x - cx, z - cz)));
@@ -75,15 +76,15 @@ export function makeHeightField(course) {
       return lerp(h, target, 1 - smooth(0, 90, d));
     };
   }
-  const W = SEG + 1;
+  const W = seg + 1;
   const H = new Float32Array(W * W);
   for (let j = 0; j < W; j++) {
     for (let i = 0; i < W; i++) H[j * W + i] = hf(-HALF + i * CELL, -HALF + j * CELL);
   }
   // 地形の三角形とぴったり同じ高さを返す
   function heightAt(x, z) {
-    const gx = clamp((x + HALF) / CELL, 0, SEG - 0.0001);
-    const gz = clamp((z + HALF) / CELL, 0, SEG - 0.0001);
+    const gx = clamp((x + HALF) / CELL, 0, seg - 0.0001);
+    const gz = clamp((z + HALF) / CELL, 0, seg - 0.0001);
     const i = Math.floor(gx), j = Math.floor(gz);
     const fx = gx - i, fz = gz - j;
     const h00 = H[j * W + i], h10 = H[j * W + i + 1], h01 = H[(j + 1) * W + i], h11 = H[(j + 1) * W + i + 1];
@@ -96,7 +97,7 @@ export function makeHeightField(course) {
     const dz = heightAt(x, z + e) - heightAt(x, z - e);
     return 2 * e / Math.hypot(dx, 2 * e, dz);
   }
-  return { N, H, W, heightAt, normalYAt, hf };
+  return { N, H, W, heightAt, normalYAt, hf, seg, cell: CELL };
 }
 
 // 横から見た山なみの形(コースのカードの絵に使う)
@@ -112,10 +113,14 @@ export function silhouette(course, field) {
 }
 
 export function buildWorld(course, quality = 1) {
+  const T0 = performance.now(), marks = {};
+  const mark = (k) => { marks[k] = Math.round(performance.now() - T0); };
   const group = new THREE.Group();
   const R = rng(course.seed * 97 + 5);
-  const field = makeHeightField(course);
+  // 画質が高いほど、地形の網目を細かくする
+  const field = makeHeightField(course, quality >= 2 ? 320 : quality >= 1 ? 256 : 192);
   const { N, H, W, heightAt, normalYAt } = field;
+  const TSEG = field.seg, TCELL = field.cell;
   const sky = course.sky;
   const updaters = [];
   const exclusions = [];
@@ -124,19 +129,32 @@ export function buildWorld(course, quality = 1) {
 
   // ---------- 地形 ----------
   {
-    const tris = SEG * SEG * 2;
+    const tris = TSEG * TSEG * 2;
     const pos = new Float32Array(tris * 9), nor = new Float32Array(tris * 9), col = new Float32Array(tris * 9);
     const a = new THREE.Vector3(), b = new THREE.Vector3(), c = new THREE.Vector3(), n = new THREE.Vector3(), t1 = new THREE.Vector3(), t2 = new THREE.Vector3();
+    const hAt = (i, j) => H[clamp(j, 0, TSEG) * W + clamp(i, 0, TSEG)];
+    // くぼみ具合(谷は少し暗く、尾根は少し明るく。光の回りこみのかわり)
+    const R2 = Math.max(2, Math.round(60 / TCELL));
+    const cav = new Float32Array(W * W);
+    for (let j = 0; j < W; j++) {
+      for (let i = 0; i < W; i++) {
+        const h = H[j * W + i];
+        const avg = (hAt(i - R2, j) + hAt(i + R2, j) + hAt(i, j - R2) + hAt(i, j + R2)) / 4;
+        cav[j * W + i] = avg - h;
+      }
+    }
     let o = 0;
     const put = (i0, j0, i1, j1, i2, j2) => {
-      a.set(-HALF + i0 * CELL, H[j0 * W + i0], -HALF + j0 * CELL);
-      b.set(-HALF + i1 * CELL, H[j1 * W + i1], -HALF + j1 * CELL);
-      c.set(-HALF + i2 * CELL, H[j2 * W + i2], -HALF + j2 * CELL);
+      a.set(-HALF + i0 * TCELL, H[j0 * W + i0], -HALF + j0 * TCELL);
+      b.set(-HALF + i1 * TCELL, H[j1 * W + i1], -HALF + j1 * TCELL);
+      c.set(-HALF + i2 * TCELL, H[j2 * W + i2], -HALF + j2 * TCELL);
       n.crossVectors(t1.subVectors(b, a), t2.subVectors(c, a)).normalize();
       const cx = (a.x + b.x + c.x) / 3, cy = (a.y + b.y + c.y) / 3, cz = (a.z + b.z + c.z) / 3;
       _col.set(course.color(cy, n.y, cx, cz, N));
-      const j = 1 + (R() - 0.5) * 0.07;
-      _col.r *= j; _col.g *= j; _col.b *= j;
+      const cv = (cav[j0 * W + i0] + cav[j1 * W + i1] + cav[j2 * W + i2]) / 3;
+      let k = 1 + (R() - 0.5) * 0.07;
+      if (cy > 1) k *= 1 - smooth(0, 18, cv) * 0.2 + smooth(0, 14, -cv) * 0.08;
+      _col.r *= k; _col.g *= k; _col.b *= k;
       for (const v of [a, b, c]) {
         pos[o] = v.x; pos[o + 1] = v.y; pos[o + 2] = v.z;
         nor[o] = n.x; nor[o + 1] = n.y; nor[o + 2] = n.z;
@@ -144,8 +162,8 @@ export function buildWorld(course, quality = 1) {
         o += 3;
       }
     };
-    for (let j = 0; j < SEG; j++) {
-      for (let i = 0; i < SEG; i++) {
+    for (let j = 0; j < TSEG; j++) {
+      for (let i = 0; i < TSEG; i++) {
         put(i, j, i + 1, j + 1, i + 1, j);
         put(i, j, i, j + 1, i + 1, j + 1);
       }
@@ -161,6 +179,7 @@ export function buildWorld(course, quality = 1) {
     group.add(terrain);
   }
 
+  mark('terrain');
   // ---------- 水 ----------
   const waterMat = new THREE.MeshPhongMaterial({
     color: sky.water, specular: sky.waterSpec, shininess: 70, flatShading: true,
@@ -324,9 +343,18 @@ export function buildWorld(course, quality = 1) {
     return d;
   }
 
+  mark('sky');
   // ---------- 小物を置く道具 ----------
   const colliders = [];
   const roads = [];
+  // 滑走路の近く(村や家を置かない)。滑走路の座標は course.strip から直接計算する
+  const nearRunwayLate = (x, z) => {
+    const st = course.strip;
+    if (!st) return false;
+    const dx = Math.sin(st.ang), dz = Math.cos(st.ang);
+    const rx = x - st.x, rz = z - st.z;
+    return Math.abs(rx * dx + rz * dz) < st.len / 2 + 80 && Math.abs(-rx * dz + rz * dx) < 110;
+  };
   const decks = [];
   const ctx = {
     R, N, heightAt, surfaceAt,
@@ -334,7 +362,7 @@ export function buildWorld(course, quality = 1) {
     updater(fn) { updaters.push(fn); },
     windAngle: () => course.windBase,
     solid(x, z, r, top) { colliders.push({ x, z, r, top }); },
-    road(x1, z1, x2, z2) { roads.push([x1, z1, x2, z2]); },
+    road(x1, z1, x2, z2, kind = 'road') { roads.push([x1, z1, x2, z2, kind]); },
     // 橋の上を車で走れるようにする(dir は橋の長さの向き、topAt(u) は橋の上の高さ)
     deck(x, z, dx, dz, hl, hw, topAt, ramp = 0) {
       const l = Math.hypot(dx, dz);
@@ -427,6 +455,24 @@ export function buildWorld(course, quality = 1) {
           f.group.position.set(cx + Math.cos(u) * 400, y0 + Math.sin(t * 0.2 + ph) * 20, cz + Math.sin(u) * 300);
         });
       });
+    },
+    normalYAt,
+    exclude(x, z, r) { exclusions.push([x, z, r]); },
+    isBlocked(x, z) {
+      if (nearRunwayLate(x, z)) return true;
+      for (const c of colliders) if ((x - c.x) ** 2 + (z - c.z) ** 2 < (c.r + 6) ** 2) return true;
+      return false;
+    },
+    // 中心から ang の向きに進んで、はじめて水になる手前の陸
+    waterEdge(cx, cz, ang, maxD = 400) {
+      const dx = Math.cos(ang), dz = Math.sin(ang);
+      let px = cx, pz = cz;
+      for (let d = 0; d < maxD; d += 4) {
+        const x = cx + dx * d, z = cz + dz * d;
+        if (surfaceAt(x, z).water) return d > 8 ? { x: px, z: pz, dx, dz } : null;
+        px = x; pz = z;
+      }
+      return null;
     },
     findShore(cx, cz, ang, minH) {
       for (let d = 0; d < 2200; d += 6) {
@@ -561,6 +607,7 @@ export function buildWorld(course, quality = 1) {
     return curve.getTangentAt(best);
   }
 
+  mark('motes');
   // ---------- 見どころと小物 ----------
   const spots = course.build(ctx).map((s) => ({ ...s, found: false }));
   const runway = course.strip ? buildRunway(ctx, course.strip, !!course.night) : null;
@@ -577,6 +624,7 @@ export function buildWorld(course, quality = 1) {
     }
   }
 
+  mark('build');
   // ---------- 木 ----------
   const treeHash = new Map();
   for (const tdef of course.trees) {
@@ -612,6 +660,147 @@ export function buildWorld(course, quality = 1) {
     group.add(inst);
   }
 
+  mark('trees');
+  // ---------- 岩と草むら(地面のこまかさ) ----------
+  {
+    const ROCK = { islands: 0x9b8f80, canyon: 0xb87a55, fjord: 0x8a8a90, aurora: 0xc8d0da, hills: 0xa09a88, town: 0xa09a88 };
+    const blocked = (x, z) => riverAt(x, z) !== null || nearRunway(x, z) || (course.noScatter && course.noScatter(x, z));
+    const m4 = new THREE.Matrix4(), q = new THREE.Quaternion(), sc = new THREE.Vector3(), p = new THREE.Vector3(), e = new THREE.Euler();
+    // 岩
+    const rockGeo = merge([part(G.dod(1), 0xffffff, [0, 0.25, 0], [0.3, 0.5, 0.2], [1.3, 0.75, 1]), part(G.dod(0.6), 0xe8e8e8, [0.8, 0.1, 0.3], [0.7, 0.1, 0.5], [1, 0.8, 1])]);
+    const nR = quality > 0 ? 900 : 450;
+    const rocks = new THREE.InstancedMesh(rockGeo, lowpolyMat, nR);
+    rocks.castShadow = quality > 0;
+    rocks.receiveShadow = true;
+    let n = 0;
+    for (let tries = 0; tries < nR * 10 && n < nR; tries++) {
+      const x = (R() - 0.5) * (SIZE - 300), z = (R() - 0.5) * (SIZE - 300);
+      if (Math.hypot(x, z) > 2300 || blocked(x, z)) continue;
+      const h = heightAt(x, z), ny = normalYAt(x, z);
+      const beach = h > -1.5 && h < 3;
+      if (!beach && !(ny > 0.5 && ny < 0.9)) continue;
+      const s0 = 0.6 + R() * R() * 4;
+      m4.compose(p.set(x, h - 0.3 * s0, z), q.setFromEuler(e.set(R() * 0.4, R() * 6.28, R() * 0.4)), sc.set(s0, s0 * (0.6 + R() * 0.6), s0));
+      rocks.setMatrixAt(n, m4);
+      _col.set(ROCK[course.id] || 0x9a9488).multiplyScalar(0.8 + R() * 0.35);
+      rocks.setColorAt(n, _col);
+      if (s0 > 1.8) {
+        const key = Math.floor(x / 20) + ',' + Math.floor(z / 20);
+        (treeHash.get(key) || treeHash.set(key, []).get(key)).push([x, z, s0 * 1.1, h + s0 * 1.2]);
+      }
+      n++;
+    }
+    rocks.count = n;
+    if (rocks.instanceColor) rocks.instanceColor.needsUpdate = true;
+    group.add(rocks);
+    // 草むら(地面の色に合わせる)
+    if (course.tufts !== false) {
+      const tuftGeo = merge([
+        part(G.cone(0.35, 1.7, 4), 0xffffff, [0, 0.8, 0], [0.2, 0, 0.15]),
+        part(G.cone(0.3, 1.4, 4), 0xf2f2f2, [0.4, 0.65, 0.2], [-0.15, 1, -0.25]),
+        part(G.cone(0.3, 1.2, 4), 0xe8e8e8, [-0.35, 0.55, -0.1], [0.1, 2, 0.3]),
+        part(G.cone(0.28, 1.3, 4), 0xf6f6f6, [0.05, 0.6, -0.45], [-0.3, 0.5, 0]),
+      ]);
+      const nT = quality > 1 ? 9000 : quality > 0 ? 6000 : 2500;
+      const tufts = new THREE.InstancedMesh(tuftGeo, lowpolyMat, nT);
+      tufts.receiveShadow = true;
+      n = 0;
+      for (let tries = 0; tries < nT * 6 && n < nT; tries++) {
+        const x = (R() - 0.5) * (SIZE - 300), z = (R() - 0.5) * (SIZE - 300);
+        if (Math.hypot(x, z) > 2250 || blocked(x, z)) continue;
+        const h = heightAt(x, z), ny = normalYAt(x, z);
+        if (h < 3 || ny < 0.82 || flowerFn(x, z, h, ny)) continue;
+        const s0 = 0.8 + R() * 1.2;
+        m4.compose(p.set(x, h - 0.1, z), q.setFromEuler(e.set(0, R() * 6.28, 0)), sc.set(s0, s0 * (0.7 + R() * 0.7), s0));
+        tufts.setMatrixAt(n, m4);
+        _col.set(course.color(h, ny, x, z, N)).multiplyScalar(0.78 + R() * 0.16);
+        tufts.setColorAt(n, _col);
+        n++;
+      }
+      tufts.count = n;
+      if (tufts.instanceColor) tufts.instanceColor.needsUpdate = true;
+      group.add(tufts);
+    }
+  }
+
+  // ---------- 波打ちぎわの白い泡 ----------
+  {
+    const P = [];
+    for (let j = 0; j < TSEG; j++) {
+      for (let i = 0; i < TSEG; i++) {
+        const a = H[j * W + i], b = H[j * W + i + 1], c = H[(j + 1) * W + i], d = H[(j + 1) * W + i + 1];
+        const lo = Math.min(a, b, c, d), hi = Math.max(a, b, c, d);
+        if (!(lo < 0 && hi > 0) || hi - lo > 40) continue;
+        const x = -HALF + (i + 0.5) * TCELL, z = -HALF + (j + 0.5) * TCELL;
+        if (Math.hypot(x, z) > 2400) continue;
+        const r = TCELL * (0.6 + R() * 0.3), a0 = R() * 6.28;
+        for (let k = 0; k < 6; k++) {
+          const t0 = a0 + (k / 6) * Math.PI * 2, t1 = a0 + ((k + 1) / 6) * Math.PI * 2;
+          P.push(x, 0.4, z, x + Math.cos(t1) * r, 0.4, z + Math.sin(t1) * r, x + Math.cos(t0) * r, 0.4, z + Math.sin(t0) * r);
+        }
+      }
+    }
+    if (P.length) {
+      const g = new THREE.BufferGeometry();
+      g.setAttribute('position', new THREE.Float32BufferAttribute(P, 3));
+      const foamMat = new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.35, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -1 });
+      const foam = new THREE.Mesh(g, foamMat);
+      foam.renderOrder = 1;
+      group.add(foam);
+      updaters.push((t) => {
+        foamMat.opacity = (course.night ? 0.18 : 0.32) + Math.sin(t * 1.3) * 0.08;
+        foam.position.y = Math.sin(t * 0.9) * 0.6;
+      });
+    }
+  }
+
+  // ---------- 遠くの山なみ(地平線をさびしくしない) ----------
+  if (course.horizon) {
+    const hz = course.horizon;
+    const fogC = new THREE.Color(sky.fog);
+    const N2 = makeNoise(course.seed + 7);
+    for (const [rad, blend, amp] of [[3300, 0.5, 1], [4600, 0.72, 1.35]]) {
+      const pos = [], col = [];
+      const SEGS = 180;
+      const top = [];
+      for (let k = 0; k <= SEGS; k++) {
+        const a = (k / SEGS) * Math.PI * 2;
+        let h = (N2.fbm(Math.cos(a) * 3 + rad * 0.001, Math.sin(a) * 3, 4) * 0.5 + 0.5) * (hz.max - hz.min) + hz.min;
+        if (hz.gaps) h = Math.max(-40, h - hz.gaps);
+        if (hz.mesa) h = Math.floor(h / 70) * 70 + 20;
+        top.push(h * amp);
+      }
+      const land = new THREE.Color(hz.color), snow = new THREE.Color(0xf4f7f8);
+      for (let k = 0; k < SEGS; k++) {
+        const a0 = (k / SEGS) * Math.PI * 2, a1 = ((k + 1) / SEGS) * Math.PI * 2;
+        const p0 = [Math.cos(a0) * rad, Math.sin(a0) * rad], p1 = [Math.cos(a1) * rad, Math.sin(a1) * rad];
+        const h0 = top[k], h1 = top[k + 1];
+        if (h0 < 0 && h1 < 0) continue;
+        // 頂上を1つ足して、とがった山にする
+        const am = (a0 + a1) / 2, hm = Math.max(h0, h1) * (1 + (N2.n2(k * 1.7, rad) * 0.25));
+        const pm = [Math.cos(am) * rad, Math.sin(am) * rad];
+        const tris = [[p0, -60, p1, -60, pm, hm], [p0, -60, pm, hm, p0, h0], [p1, -60, p1, h1, pm, hm]];
+        for (const [A, ya, B, yb, C, yc] of tris) {
+          const yMax = Math.max(ya, yb, yc);
+          const cc = (hz.snow && yMax > hz.snow ? snow.clone().lerp(land, 0.25) : land.clone()).lerp(fogC, blend + (R() - 0.5) * 0.04);
+          for (const [P2, y] of [[A, ya], [B, yb], [C, yc]]) {
+            pos.push(P2[0], y, P2[1]);
+            col.push(cc.r, cc.g, cc.b);
+          }
+        }
+      }
+      const g = new THREE.BufferGeometry();
+      g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+      g.setAttribute('color', new THREE.Float32BufferAttribute(col, 3));
+      const ringMesh = new THREE.Mesh(g, new THREE.MeshBasicMaterial({ vertexColors: true, fog: false, side: THREE.DoubleSide }));
+      ringMesh.renderOrder = -5;
+      ringMesh.frustumCulled = false;
+      group.add(ringMesh);
+      updaters.push((t, dt, cam) => { ringMesh.position.set(cam.position.x * 0.9, 0, cam.position.z * 0.9); });
+    }
+  }
+
+  mark('scatter+foam+horizon');
   // ---------- 上昇気流(サーマル) ----------
   const thermals = course.thermals.map(([x, z]) => ({ x, z, r: 110, lift: 4.2 }));
   if (thermals.length) {
@@ -713,6 +902,7 @@ export function buildWorld(course, quality = 1) {
     });
   }
 
+  mark('rest');
   // ---------- 小地図用の絵 ----------
   function mapCanvas(size = 256) {
     const cv = document.createElement('canvas');
@@ -870,5 +1060,7 @@ export function buildWorld(course, quality = 1) {
     thermals, thermalLift, cloudDensity, windAt, update, checkGates, mapCanvas, dispose, sunDir, field,
     groundCurve, groundLen, setMoteMode, runway, collide, deckAt, landSpawn, roads, colliders, normalYAt,
     get moteCount() { return moteN; },
+    marks,
+    get trains() { return ctx.trains || []; },
   };
 }
